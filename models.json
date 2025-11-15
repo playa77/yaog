@@ -1,0 +1,36 @@
+{
+  "models": [
+    {
+      "name": "GLM 4.5 (free)",
+      "id": "z-ai/glm-4.5-air:free"
+    },
+    {
+      "name": "Deepseek V3 (free)",
+      "id": "deepseek/deepseek-chat-v3-0324:free"
+    },
+    {
+      "name": "Deepseek R1 (free)",
+      "id": "deepseek/deepseek-r1-0528:free"
+    },
+    {
+      "name": "Kimi K2 (free)",
+      "id": "moonshotai/kimi-k2:free"
+    },
+    {
+      "name": "Gemini 2.0 Flash (free)",
+      "id": "google/gemini-2.0-flash-exp:free"
+    },
+    {
+      "name": "Gemini 2.0 Flash Lite",
+      "id": "google/gemini-2.0-flash-lite-001"
+    },
+    {
+      "name": "Qwen3 (free)",
+      "id": "qwen/qwen3-235b-a22b:free"
+    },
+    {
+      "name": "Qwen 3 Coder (free)",
+      "id": "qwen/qwen3-coder:free"
+    }
+  ]
+}
