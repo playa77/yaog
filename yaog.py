@@ -1,27 +1,30 @@
 # YaOG -- Yet another Openrouter GUI
-# Version: 1.9
-# Description: Instructive Roadmap - M1, T4 (Database Integration)
+# Version: 2.0
+# Description: Instructive Roadmap - M1, T5 (Full Persistence Loop)
+#
+# Change Log (v2.0):
+# - Implemented Milestone 1, Task 5: Full Persistence Loop.
+# - Chat history is now fully persistent. The application loads all conversations
+#   from the database on startup and populates the history list.
+# - Implemented conversation loading: clicking a conversation in the history list
+#   now clears the current view and loads the selected chat history.
+# - Implemented automatic saving:
+#   - When a message is sent in a new chat, a new conversation record is
+#     created in the database.
+#   - Both user and assistant messages are saved to the database as they
+#     are sent and received, respectively.
+# - Added "New Chat" and "Delete Chat" buttons to the history dock:
+#   - "New Chat" button clears the current session and prepares for a new conversation.
+#   - "Delete Chat" button removes the selected conversation from both the UI
+#     and the database.
+# - Added a `clearChat()` function to `chat_template.html` and call it from
+#   Python via `runJavaScript` for efficient UI updates.
+# - The application now tracks the active conversation via `self.current_conversation_id`.
 #
 # Change Log (v1.9):
 # - Implemented Milestone 1, Task 4: Database Integration.
 # - Created a new, self-contained module `database_manager.py` to handle
-#   all SQLite database operations, following the separation of concerns principle.
-# - The `DatabaseManager` class now manages the database file located in a
-#   user-specific config directory (e.g., ~/.or-client/or-client.db).
-# - It automatically creates the required schema on first run, including tables
-#   for conversations, messages, system_prompts, and tags.
-# - Implemented core CRUD methods in `DatabaseManager` for adding and retrieving
-#   conversations and messages, and for deleting conversations.
-# - Integrated the `DatabaseManager` into the `MainWindow` class by instantiating
-#   it during initialization. This lays the groundwork for the full persistence
-#   loop in the next task.
-# - Added logging to confirm successful database initialization on startup.
-#
-# Change Log (v1.8):
-# - Implemented Milestone 1, Task 3: Dynamic Chat Rendering via QWebChannel.
-# - Replaced the old `_render_chat` method with a performant, signal-based approach.
-# - Created `chat_template.html` to serve as the static frontend.
-# - Added a `ChatBackend(QObject)` class to bridge Python and JavaScript.
+#   all SQLite database operations.
 #
 # (Previous change logs omitted for brevity)
 
@@ -88,8 +91,6 @@ def setup_project_files():
     # Check for chat_template.html
     if not Path("chat_template.html").exists():
         print("\033[91m[FATAL] 'chat_template.html' is missing. Please create it or restore it from the source.\033[0m")
-        # In a real app, you might create a default one, but here we'll exit
-        # as it's a core component provided with the script.
         sys.exit(1)
 
 
@@ -115,7 +116,7 @@ def main_application():
         from PyQt6.QtWidgets import (
             QApplication, QMainWindow, QDockWidget, QTextEdit, QListWidget,
             QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QComboBox,
-            QSlider, QMessageBox
+            QSlider, QMessageBox, QListWidgetItem
         )
         from PyQt6.QtCore import (
             Qt, QRunnable, QThreadPool, QObject, pyqtSignal, pyqtSlot, QUrl, QTimer
@@ -235,10 +236,12 @@ def main_application():
             """The main application window."""
             def __init__(self, log_signal):
                 super().__init__()
-                self.setWindowTitle("OR-Client (v1.9) - Database Integration")
+                self.setWindowTitle("OR-Client (v2.0) - Full Persistence Loop")
                 self.setGeometry(100, 100, 1400, 900)
                 self.models = []
                 self.current_messages = []
+                # --- NEW: State variable to track the current conversation ID ---
+                self.current_conversation_id = None
                 
                 log_signal.connect(self._append_log)
 
@@ -249,20 +252,21 @@ def main_application():
                 self.threadpool = QThreadPool()
                 gui_print_info(f"Thread pool configured with max threads: {self.threadpool.maxThreadCount()}")
                 
-                # --- NEW: Initialize the Database Manager ---
+                # --- Initialize the Database Manager ---
                 try:
                     self.db_manager = DatabaseManager()
                     gui_print_success("DatabaseManager initialized successfully.")
-                    # Optional: A simple test to see if it works
-                    all_convos = self.db_manager.get_all_conversations()
-                    gui_print_info(f"Found {len(all_convos)} conversations in the database.")
                 except Exception as e:
                     gui_print_error(f"Failed to initialize DatabaseManager: {e}")
                     QMessageBox.critical(self, "Database Error", f"Could not initialize the database: {e}\n\nThe application may not function correctly.")
-                    self.db_manager = None # Ensure db_manager is None if it fails
+                    self.db_manager = None
 
                 self._load_config()
                 self._check_api_key()
+                
+                # --- NEW: Populate history list from database on startup ---
+                if self.db_manager:
+                    self._populate_history_list()
 
             def closeEvent(self, event):
                 gui_print_info("Close event triggered. Cleaning up...")
@@ -274,7 +278,7 @@ def main_application():
                 else:
                     gui_print_warning("Timeout reached while waiting for threads.")
 
-                # --- NEW: Close the database connection ---
+                # --- Close the database connection ---
                 if self.db_manager:
                     gui_print_info("Closing database connection...")
                     self.db_manager.close()
@@ -302,9 +306,20 @@ def main_application():
                 left_widget = QWidget()
                 left_layout = QVBoxLayout(left_widget)
                 left_layout.setContentsMargins(0, 5, 0, 0)
+
+                # --- NEW: Add New/Delete buttons ---
+                history_controls_layout = QHBoxLayout()
+                self.new_chat_button = QPushButton("New Chat")
+                self.new_chat_button.clicked.connect(self._new_chat)
+                self.delete_chat_button = QPushButton("Delete Chat")
+                self.delete_chat_button.clicked.connect(self._delete_chat)
+                history_controls_layout.addWidget(self.new_chat_button)
+                history_controls_layout.addWidget(self.delete_chat_button)
+                left_layout.addLayout(history_controls_layout)
                 
                 self.history_list = QListWidget()
-                self.history_list.addItem("Conversation 1 (Placeholder)")
+                # --- NEW: Connect itemClicked signal to load a conversation ---
+                self.history_list.itemClicked.connect(self._load_conversation)
                 left_layout.addWidget(self.history_list, 2)
                 
                 self.log_output = QTextEdit()
@@ -382,6 +397,101 @@ def main_application():
                     gui_print_error(f"Failed to load or parse 'models.json': {e}")
                     QMessageBox.critical(self, "Config Error", f"Could not load models.json: {e}")
 
+            # --- NEW: Methods for persistence and conversation management ---
+
+            def _populate_history_list(self):
+                """Fetches all conversations from the DB and populates the history list."""
+                gui_print_info("Populating conversation history from database...")
+                self.history_list.clear()
+                conversations = self.db_manager.get_all_conversations()
+                for convo in conversations:
+                    item = QListWidgetItem(convo['title'])
+                    # Store the database ID in the item for later retrieval
+                    item.setData(Qt.ItemDataRole.UserRole, convo['id'])
+                    self.history_list.addItem(item)
+                gui_print_success(f"Loaded {len(conversations)} conversations into history list.")
+
+            @pyqtSlot()
+            def _new_chat(self):
+                """Resets the application state for a new conversation."""
+                gui_print_info("Starting new chat.")
+                self.current_conversation_id = None
+                self.current_messages = []
+                self.input_box.clear()
+                self.history_list.clearSelection()
+                # Use runJavaScript to call the new function in the HTML
+                self.chat_view.page().runJavaScript("clearChat();")
+
+            @pyqtSlot()
+            def _delete_chat(self):
+                """Deletes the currently selected conversation."""
+                selected_item = self.history_list.currentItem()
+                if not selected_item:
+                    QMessageBox.information(self, "Delete Chat", "Please select a conversation to delete.")
+                    return
+
+                convo_id = selected_item.data(Qt.ItemDataRole.UserRole)
+                convo_title = selected_item.text()
+
+                reply = QMessageBox.question(self, "Confirm Delete",
+                                             f"Are you sure you want to delete the conversation:\n'{convo_title}'?",
+                                             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                                             QMessageBox.StandardButton.No)
+
+                if reply == QMessageBox.StandardButton.Yes:
+                    gui_print_info(f"Deleting conversation ID: {convo_id}")
+                    self.db_manager.delete_conversation(convo_id)
+                    
+                    # Remove from the list widget
+                    row = self.history_list.row(selected_item)
+                    self.history_list.takeItem(row)
+                    
+                    # If the deleted chat was the active one, start a new chat
+                    if self.current_conversation_id == convo_id:
+                        self._new_chat()
+                    
+                    gui_print_success(f"Successfully deleted conversation '{convo_title}'.")
+
+            @pyqtSlot(QListWidgetItem)
+            def _load_conversation(self, item):
+                """Loads messages for the selected conversation from the DB into the view."""
+                convo_id = item.data(Qt.ItemDataRole.UserRole)
+                if convo_id == self.current_conversation_id:
+                    gui_print_info(f"Conversation {convo_id} is already loaded.")
+                    return
+
+                gui_print_info(f"Loading conversation ID: {convo_id}")
+                
+                # Clear the current view first
+                self.chat_view.page().runJavaScript("clearChat();")
+                
+                messages_from_db = self.db_manager.get_messages_for_conversation(convo_id)
+                
+                self.current_messages = []
+                for msg in messages_from_db:
+                    # Reconstruct the message format for the API
+                    self.current_messages.append({"role": msg["role"], "content": msg["content"]})
+                    
+                    # Determine model name for display
+                    if msg["role"] == "user":
+                        model_name = "You"
+                    else:
+                        # Find the display name from the combo box data
+                        model_display_name = "Unknown Model"
+                        for i in range(self.model_combo.count()):
+                            if self.model_combo.itemData(i) == msg["model_used"]:
+                                model_display_name = self.model_combo.itemText(i)
+                                break
+                        model_name = model_display_name
+
+                    # Render the message in the frontend
+                    self.chat_backend.message_added.emit(msg["role"], msg["content"], model_name)
+
+                self.current_conversation_id = convo_id
+                gui_print_success(f"Finished loading {len(self.current_messages)} messages for conversation {convo_id}.")
+
+            # --- Modified Core Logic ---
+
             @pyqtSlot()
             def send_message(self):
                 user_text = self.input_box.toPlainText().strip()
@@ -392,6 +502,28 @@ def main_application():
 
                 model_id = self.model_combo.currentData()
                 temperature = self.temp_slider.value() / 100.0
+
+                # --- NEW: Persistence Logic ---
+                # If this is the first message of a new chat, create the conversation first.
+                if self.current_conversation_id is None:
+                    # Create a title from the first 40 characters of the message.
+                    title = user_text[:40] + "..." if len(user_text) > 40 else user_text
+                    new_id = self.db_manager.add_conversation(title)
+                    if new_id != -1:
+                        self.current_conversation_id = new_id
+                        gui_print_success(f"Created new conversation with ID: {new_id} and title: '{title}'")
+                        # Add to the top of the history list and select it
+                        new_item = QListWidgetItem(title)
+                        new_item.setData(Qt.ItemDataRole.UserRole, new_id)
+                        self.history_list.insertItem(0, new_item)
+                        self.history_list.setCurrentItem(new_item)
+                    else:
+                        self.handle_api_error("Failed to create a new conversation in the database.")
+                        return
+                
+                # Save the user's message to the database.
+                self.db_manager.add_message(self.current_conversation_id, "user", user_text, None, None)
+                # --- End of Persistence Logic ---
 
                 self.current_messages.append({"role": "user", "content": user_text})
                 
@@ -414,7 +546,21 @@ def main_application():
                     
                     self.current_messages.append({"role": "assistant", "content": assistant_message})
                     
+                    current_model_id = self.model_combo.currentData()
                     current_model_name = self.model_combo.currentText()
+                    current_temp = self.temp_slider.value() / 100.0
+                    
+                    # --- NEW: Save assistant's message to the database ---
+                    if self.current_conversation_id:
+                        self.db_manager.add_message(
+                            self.current_conversation_id, 
+                            "assistant", 
+                            assistant_message, 
+                            current_model_id, 
+                            current_temp
+                        )
+                    # --- End of Persistence Logic ---
+                    
                     gui_print_info("Emitting assistant message to frontend...")
                     self.chat_backend.message_added.emit("assistant", assistant_message, current_model_name)
 
@@ -454,7 +600,7 @@ def main_application():
         sys.exit(1)
 
 if __name__ == "__main__":
-    print("[INFO] --- OR-Client Initializing (v1.9) ---")
+    print("[INFO] --- OR-Client Initializing (v2.0) ---")
     setup_project_files()
     main_application()
     print("[INFO] --- Script Finished ---")

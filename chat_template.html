@@ -1,8 +1,11 @@
 <!-- chat_template.html for OR-Client (yaog.py) -->
-<!-- Version: 1.8 -->
+<!-- Version: 2.0 -->
 <!-- Description: The frontend view for the chat interface. -->
 <!-- This file is loaded into the QWebEngineView and communicates -->
 <!-- with the Python backend via QWebChannel. -->
+<!-- Change Log (v2.0): -->
+<!-- - Added the clearChat() function to allow the Python backend -->
+<!--   to clear the chat display efficiently. -->
 <!DOCTYPE html>
 <html>
 <head>
@@ -77,6 +80,16 @@
     <div id="chat-container"></div>
 
     <script>
+        // --- NEW: This function can be called from Python to clear the view ---
+        /**
+         * Clears all messages from the chat container.
+         */
+        function clearChat() {
+            console.log("JavaScript: clearChat() called.");
+            const chatContainer = document.getElementById('chat-container');
+            chatContainer.innerHTML = '';
+        }
+
         // This script runs once the HTML document is loaded.
         document.addEventListener("DOMContentLoaded", function() {
             console.log("Chat View DOM loaded. Initializing QWebChannel.");
