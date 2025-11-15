@@ -1,0 +1,140 @@
+<!-- chat_template.html for OR-Client (yaog.py) -->
+<!-- Version: 1.8 -->
+<!-- Description: The frontend view for the chat interface. -->
+<!-- This file is loaded into the QWebEngineView and communicates -->
+<!-- with the Python backend via QWebChannel. -->
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Chat View</title>
+    <!-- The mandatory QWebChannel JavaScript library -->
+    <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
+    <style>
+        /* Basic styling for the chat interface. This can be expanded later. */
+        body {
+            background-color: #1e1e1e;
+            color: #e0e0e0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            font-size: 16px;
+            margin: 0;
+            padding: 15px;
+        }
+
+        #chat-container {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .message {
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            max-width: 85%;
+            line-height: 1.5;
+        }
+
+        .user {
+            background-color: #2d2d2d;
+            border-left: 4px solid #4CAF50; /* Green accent for user */
+            align-self: flex-end;
+        }
+
+        .assistant {
+            background-color: #383838;
+            border-left: 4px solid #2196F3; /* Blue accent for assistant */
+            align-self: flex-start;
+        }
+
+        .message strong {
+            color: #ffffff;
+            display: block;
+            margin-bottom: 8px;
+        }
+
+        /* Styling for code blocks, ensuring readability and proper formatting */
+        pre {
+            background-color: #111;
+            padding: 12px;
+            border-radius: 4px;
+            overflow-x: auto;
+            white-space: pre-wrap;       /* Since CSS 2.1 */
+            white-space: -moz-pre-wrap;  /* Mozilla, since 1999 */
+            white-space: -pre-wrap;      /* Opera 4-6 */
+            white-space: -o-pre-wrap;    /* Opera 7 */
+            word-wrap: break-word;       /* Internet Explorer 5.5+ */
+        }
+
+        code {
+            font-family: "Fira Code", "Courier New", monospace;
+            font-size: 0.9em;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- This is the main container where new chat messages will be appended. -->
+    <div id="chat-container"></div>
+
+    <script>
+        // This script runs once the HTML document is loaded.
+        document.addEventListener("DOMContentLoaded", function() {
+            console.log("Chat View DOM loaded. Initializing QWebChannel.");
+
+            // The 'qt.webChannelTransport' object is automatically provided by Qt's
+            // web engine when a QWebChannel is set on the page.
+            new QWebChannel(qt.webChannelTransport, function(channel) {
+                // 'backend' is the name we registered our Python QObject with.
+                // We now have a proxy object 'backend' that mirrors the Python object.
+                const backend = channel.objects.backend;
+                console.log("QWebChannel connection established. Backend object is now available.");
+
+                // The core of the bridge: Connect a Python signal to a JavaScript function.
+                // When `backend.message_added.emit(...)` is called in Python,
+                // the `appendMessage` function in this script will be executed with the same arguments.
+                backend.message_added.connect(appendMessage);
+
+                console.log("JavaScript function 'appendMessage' is now connected to Python signal 'message_added'.");
+            });
+
+            /**
+             * Appends a new message to the chat container.
+             * This function is called directly by a signal from the Python backend.
+             * @param {string} role - The role of the message sender ('user' or 'assistant').
+             * @param {string} content - The raw text content of the message.
+             * @param {string} modelName - The name of the model that generated the message (or "You" for the user).
+             */
+            function appendMessage(role, content, modelName) {
+                console.log(`Received message from Python. Role: ${role}, Model: ${modelName}`);
+
+                const chatContainer = document.getElementById('chat-container');
+
+                // Create the main message container div
+                const messageDiv = document.createElement('div');
+                messageDiv.classList.add('message', role); // e.g., class="message user"
+
+                // Create the header element (e.g., "You" or "Assistant (Model Name)")
+                const header = document.createElement('strong');
+                header.textContent = (role === 'user') ? "You" : `Assistant (${modelName})`;
+                messageDiv.appendChild(header);
+
+                // To render content safely, especially with code blocks, we wrap it
+                // in <pre><code> and set the textContent of the <code> element.
+                // This prevents any potential HTML injection/XSS issues.
+                const pre = document.createElement('pre');
+                const code = document.createElement('code');
+                code.textContent = content; // Safely sets the text, no HTML parsing
+                pre.appendChild(code);
+                messageDiv.appendChild(pre);
+
+                // Add the fully constructed message to the DOM
+                chatContainer.appendChild(messageDiv);
+
+                // Automatically scroll to the bottom to show the newest message
+                window.scrollTo(0, document.body.scrollHeight);
+            }
+        });
+    </script>
+
+</body>
+</html>

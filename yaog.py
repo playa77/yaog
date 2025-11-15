@@ -1,22 +1,25 @@
 # YaOG -- Yet another Openrouter GUI
-# Version: 1.7
-# Description: Instructive Roadmap - M1, T2 (Code Refactoring)
+# Version: 1.8
+# Description: Instructive Roadmap - M1, T3 (QWebChannel Chat Rendering)
+#
+# Change Log (v1.8):
+# - Implemented Milestone 1, Task 3: Dynamic Chat Rendering via QWebChannel.
+# - Replaced the old `_render_chat` method, which rebuilt the entire HTML
+#   on every turn, with a performant, signal-based approach.
+# - Created a new `chat_template.html` file to serve as the static frontend.
+#   This file contains the necessary JavaScript to communicate with Python.
+# - Added a new `ChatBackend(QObject)` class in Python. An instance of this
+#   class is exposed to the JavaScript context of the QWebEngineView.
+# - The `ChatBackend` class has a `message_added` signal that carries new
+#   message data (role, content, model name).
+# - JavaScript code in `chat_template.html` listens for this signal and
+#   dynamically creates and appends new message elements to the DOM.
+# - This new architecture is scalable and critical for future features that
+#   require JS-to-Python communication (e.g., a "Copy" button).
 #
 # Change Log (v1.7):
 # - Refactored Codebase for Maintainability:
 #   - Moved the `ApiManager` class into its own dedicated module, `api_manager.py`.
-#   - The main script (`yaog.py`) now imports the `ApiManager` class.
-#   - This separates API communication logic from the GUI logic, improving
-#     code organization and following the "separation of concerns" principle.
-#   - The `ApiManager` now uses standard `print()` for logging, making it
-#     a more self-contained and reusable module.
-#
-# Change Log (v1.6):
-# - CRITICAL FIX: Implemented correct Server-Sent Events (SSE) parsing.
-#   - ApiManager's `get_completion_stream` now uses `iter_lines()`.
-#   - ApiWorker's `run` method was rewritten to correctly parse the SSE stream,
-#     accumulate content deltas, and handle the "[DONE]" signal.
-#   - This resolved the `JSONDecodeError: Expecting value...` crash.
 #
 # (Previous change logs omitted for brevity)
 
@@ -29,7 +32,7 @@ import traceback
 from pathlib import Path
 import html as html_lib
 
-# --- NEW: Import the refactored ApiManager ---
+# --- Import the refactored ApiManager ---
 from api_manager import ApiManager
 
 # --- Crash Diagnosis & Safety ---
@@ -49,8 +52,8 @@ sys.excepthook = crash_handler
 
 def setup_project_files():
     """
-    Checks for essential configuration files (.env, models.json) and creates
-    placeholders if they don't exist, guiding the user on first run.
+    Checks for essential configuration files (.env, models.json, chat_template.html)
+    and creates placeholders if they don't exist.
     """
     # Check for .env file
     if not Path(".env").exists():
@@ -78,6 +81,13 @@ def setup_project_files():
             print("\033[92m[SUCCESS] Created default 'models.json' file.\033[0m")
         except IOError as e:
             print(f"\033[91m[ERROR] Could not create models.json file: {e}\033[0m")
+
+    # Check for chat_template.html
+    if not Path("chat_template.html").exists():
+        print("\033[91m[FATAL] 'chat_template.html' is missing. Please create it or restore it from the source.\033[0m")
+        # In a real app, you might create a default one, but here we'll exit
+        # as it's a core component provided with the script.
+        sys.exit(1)
 
 
 def main_application():
@@ -108,7 +118,9 @@ def main_application():
             Qt, QRunnable, QThreadPool, QObject, pyqtSignal, pyqtSlot, QUrl, QTimer
         )
         from PyQt6.QtWebEngineWidgets import QWebEngineView
-        from PyQt6.QtWebEngineCore import QWebEngineProfile
+        from PyQt6.QtWebEngineCore import QWebEngineProfile, QWebEnginePage
+        # --- NEW: QWebChannel is required for the Python-JS bridge ---
+        from PyQt6.QtWebChannel import QWebChannel
         
         from dotenv import load_dotenv
         
@@ -142,8 +154,6 @@ def main_application():
 
         gui_print_info("Loading environment variables from .env file...")
         load_dotenv()
-
-        # --- ApiManager class has been removed from here ---
 
         class WorkerSignals(QObject):
             finished = pyqtSignal(dict)
@@ -212,11 +222,21 @@ def main_application():
                     print("\033[91m------------------------------\033[0m\n", file=sys.__stderr__)
                     self.signals.error.emit(error_message)
 
+        # --- NEW: Backend class for QWebChannel communication ---
+        class ChatBackend(QObject):
+            """
+            This object is exposed to the JavaScript context of the QWebEngineView.
+            It provides signals that the JavaScript code can connect to.
+            """
+            # Signal to send a new message to the frontend for rendering.
+            # Arguments: role (str), content (str), modelName (str)
+            message_added = pyqtSignal(str, str, str, name='message_added')
+
         class MainWindow(QMainWindow):
             """The main application window."""
             def __init__(self, log_signal):
                 super().__init__()
-                self.setWindowTitle("OR-Client (v1.7) - Refactored")
+                self.setWindowTitle("OR-Client (v1.8) - QWebChannel")
                 self.setGeometry(100, 100, 1400, 900)
                 self.models = []
                 self.current_messages = []
@@ -226,7 +246,6 @@ def main_application():
                 self._create_docks()
                 self._setup_central_widget()
                 
-                # --- The ApiManager is now instantiated from the imported class ---
                 self.api_manager = ApiManager()
                 self.threadpool = QThreadPool()
                 gui_print_info(f"Thread pool configured with max threads: {self.threadpool.maxThreadCount()}")
@@ -308,7 +327,8 @@ def main_application():
                 layout = QVBoxLayout(central_widget)
                 
                 self.chat_view = QWebEngineView()
-                self.chat_view.setHtml("<html><body style='background-color:#1e1e1e;'></body></html>")
+                # --- NEW: Setup QWebChannel ---
+                self._setup_web_channel()
                 layout.addWidget(self.chat_view, 1)
                 
                 self.input_box = QTextEdit()
@@ -321,6 +341,30 @@ def main_application():
                 layout.addWidget(self.send_button)
                 
                 self.setCentralWidget(central_widget)
+
+            def _setup_web_channel(self):
+                """Initializes the QWebChannel and connects it to the QWebEngineView."""
+                gui_print_info("Setting up QWebChannel bridge...")
+                
+                # 1. Create the Python object that will be exposed to JavaScript
+                self.chat_backend = ChatBackend()
+                
+                # 2. Create the QWebChannel
+                self.channel = QWebChannel()
+                
+                # 3. Register the Python object with the channel under a specific name.
+                #    This name ("backend") must match the name used in the JavaScript code.
+                self.channel.registerObject("backend", self.chat_backend)
+                
+                # 4. Set the channel on the web page of the view.
+                #    This makes the `qt.webChannelTransport` object available in JS.
+                self.chat_view.page().setWebChannel(self.channel)
+                
+                # 5. Load the HTML file that contains the frontend logic.
+                #    We use an absolute path to ensure it's found correctly.
+                html_path = os.path.abspath("chat_template.html")
+                self.chat_view.setUrl(QUrl.fromLocalFile(html_path))
+                gui_print_success(f"QWebChannel setup complete. Loaded view from: {html_path}")
 
             def _load_config(self):
                 models_file = Path("models.json")
@@ -335,25 +379,8 @@ def main_application():
                     gui_print_error(f"Failed to load or parse 'models.json': {e}")
                     QMessageBox.critical(self, "Config Error", f"Could not load models.json: {e}")
 
-            def _render_chat(self):
-                html = """
-                <html><head><style>
-                    body { background-color: #1e1e1e; color: #e0e0e0; font-family: sans-serif; padding: 20px; }
-                    .user { background-color: #2d2d2d; padding: 15px; border-radius: 8px; margin-bottom: 15px; border-left: 4px solid #4CAF50; }
-                    .assistant { background-color: #383838; padding: 15px; border-radius: 8px; margin-bottom: 15px; border-left: 4px solid #2196F3; }
-                    strong { color: #ffffff; }
-                    pre { background-color: #000; padding: 10px; border-radius: 4px; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word; }
-                </style></head><body>
-                """
-                
-                for msg in self.current_messages:
-                    role_class = "user" if msg['role'] == 'user' else "assistant"
-                    role_name = "You" if msg['role'] == 'user' else f"Assistant ({self.model_combo.currentText()})"
-                    content = f"<pre><code>{html_lib.escape(msg['content'])}</code></pre>"
-                    html += f"<div class='{role_class}'><strong>{role_name}</strong><br>{content}</div>"
-                
-                html += "</body></html>"
-                self.chat_view.setHtml(html)
+            # --- REMOVED: The _render_chat method is now obsolete. ---
+            # The JavaScript in chat_template.html handles all rendering.
 
             @pyqtSlot()
             def send_message(self):
@@ -366,12 +393,17 @@ def main_application():
                 model_id = self.model_combo.currentData()
                 temperature = self.temp_slider.value() / 100.0
 
+                # 1. Add message to the internal history for the API call
                 self.current_messages.append({"role": "user", "content": user_text})
-                self._render_chat()
+                
+                # 2. Emit a signal to the JavaScript frontend to render the user's message
+                gui_print_info("Emitting user message to frontend...")
+                self.chat_backend.message_added.emit("user", user_text, "You")
                 
                 self.input_box.clear()
                 self.set_ui_enabled(False)
 
+                # 3. Start the API call in a background thread
                 worker = ApiWorker(self.api_manager, model_id, self.current_messages, temperature)
                 worker.signals.finished.connect(self.handle_api_response)
                 worker.signals.error.connect(self.handle_api_error)
@@ -382,8 +414,15 @@ def main_application():
                 gui_print_success("API response received and parsed successfully.")
                 try:
                     assistant_message = response['choices'][0]['message']['content']
+                    
+                    # 1. Add the new message to the internal history
                     self.current_messages.append({"role": "assistant", "content": assistant_message})
-                    self._render_chat()
+                    
+                    # 2. Emit a signal to the JavaScript frontend to render the assistant's message
+                    current_model_name = self.model_combo.currentText()
+                    gui_print_info("Emitting assistant message to frontend...")
+                    self.chat_backend.message_added.emit("assistant", assistant_message, current_model_name)
+
                 except (KeyError, IndexError) as e:
                     error_msg = f"Could not parse the API response. Error: {e}. Full Response: {response}"
                     self.handle_api_error(error_msg)
@@ -420,7 +459,7 @@ def main_application():
         sys.exit(1)
 
 if __name__ == "__main__":
-    print("[INFO] --- OR-Client Initializing (v1.7) ---")
+    print("[INFO] --- OR-Client Initializing (v1.8) ---")
     setup_project_files()
     main_application()
     print("[INFO] --- Script Finished ---")
