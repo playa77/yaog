@@ -1,89 +1,126 @@
-# OR-Client - A Standalone OpenRouter.ai Frontend
+# YaOG
+**Yet Another OpenRouter GUI**
 
-![Project Status: In Development](https://img.shields.io/badge/status-in%20development-orange)
-![Language: Python](https://img.shields.io/badge/python-3.10+-blue.svg)
-![Framework: PyQt6](https://img.shields.io/badge/Framework-PyQt6-green.svg)
-![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
+> **Version:** 2.4.3
+> **Status:** Milestone 2 Complete (Advanced Features & UX Polish)
 
-A fast, native, and uncluttered desktop application for Ubuntu Linux, designed to provide a power-user interface for the OpenRouter.ai API.
+YaOG is a robust, standalone desktop application built with Python and PyQt6. It serves as a feature-rich, local-first graphical user interface for interacting with the OpenRouter.ai API. It prioritizes user privacy by storing all conversation history locally via SQLite and offers power-user features like file attachments, system prompt management, and granular model control.
+
+This application is designed and tested specifically for Linux environments.
 
 ---
 
-![OR-Client Screenshot](https://raw.githubusercontent.com/path/to/your/screenshot.png)
-*(Note: Please replace the image link above with an actual screenshot of the application)*
+## Key Features
 
-### Core Philosophy
+### Core Chat Experience
+*   **Multi-Model Support:** Seamlessly switch between models (e.g., Mistral, Llama 3, Gemma) per message generation.
+*   **Parameter Control:** Adjust temperature via a slider to control creativity.
+*   **Streamed Responses:** Real-time text streaming for a responsive feel.
+*   **Token Counting:** Real-time context token estimation using `tiktoken`.
 
-OR-Client is built for developers, writers, and AI power-users who want maximum, per-generation control over model parameters in a responsive, local-first environment. The user experience is inspired by the clean, three-panel layout of Google AI Studio, prioritizing workflow efficiency over non-essential features. All conversation data is stored locally in a SQLite database, ensuring user privacy and offline access to past chats.
+### Advanced Capabilities (Milestone 2)
+*   **File Attachments:**
+    *   Upload text-based files (Code, Logs, CSV, JSON, Markdown) and PDFs.
+    *   Automatic text extraction (using `PyMuPDF` for PDFs) injected directly into the context.
+    *   Staging area to review attachments before sending.
+*   **System Prompt Manager:**
+    *   Create, Edit, Save, and Delete custom system personas (e.g., "Coding Assistant", "Creative Writer").
+    *   Select a saved prompt from a dropdown to instantly apply it to the current chat.
+*   **Markdown Rendering:**
+    *   Toggleable "Render Markdown" checkbox.
+    *   View code blocks, tables, and formatting, or switch to raw text for copying.
+*   **Local Persistence:**
+    *   All chats and messages are saved automatically to a local SQLite database (`~/.or-client/or-client.db`).
+    *   History persists across sessions.
 
-### Features
+### UX Enhancements
+*   **Chat Management:** Right-click conversations in the history sidebar to **Rename** or **Delete** them.
+*   **Copy Tools:** One-click "Copy" button for every assistant message (strips out hidden attachment metadata automatically).
+*   **Copy Full Conversation:** Button to copy the entire chat log to the clipboard.
+*   **Locked UI:** Clean, fixed-layout dock widgets for a stable desktop experience.
 
--   **✅ Live OpenRouter Connection:** Connects securely to the OpenRouter API using your private API key.
--   **✅ Asynchronous API Calls:** The UI remains fast and responsive while waiting for model responses, thanks to a multi-threaded architecture.
--   **✅ Robust Streaming:** Handles streaming responses correctly, ensuring compatibility with even the slowest models without timeouts.
--   **✅ Granular Model Control:** Select from any model listed in your local `models.json` configuration.
--   **✅ Temperature Control:** Easily adjust the temperature for each generation.
--   **🚧 Full Conversation Persistence:** (In Progress) All conversations will be saved automatically to a local SQLite database.
--   **🚧 History Management:** (Planned) Load, search, and tag previous conversations.
--   **🚧 System Prompt Management:** (Planned) Create, save, and reuse custom system prompts and personas.
+---
 
-### Technology Stack
+## Installation
 
--   **Language:** Python 3.10+
--   **UI Framework:** PyQt6
--   **API Communication:** `httpx` for robust, asynchronous API calls.
--   **Configuration:** `python-dotenv` for API key management.
--   **Data Storage:** Python's built-in `sqlite3` module.
--   **Chat Rendering:** `QWebEngineView` for high-fidelity Markdown and code rendering.
+### Prerequisites
+*   **Python 3.10+**
+*   An API Key from OpenRouter.ai
 
-### Getting Started
+### Setup
 
-Follow these instructions to get a local copy up and running.
+1.  **Clone or Download the Repository:**
 
-#### Prerequisites
+        git clone <repository-url>
+        cd yaog
 
--   Ubuntu Linux
--   Python 3.10 or newer
--   Git
+2.  **Create a Virtual Environment (Recommended):**
 
-#### Installation
+        python -m venv venv
+        source venv/bin/activate
 
-1.  **Clone the repository:**
-    ```sh
-    git clone https://github.com/your-username/or-client.git
-    cd or-client
-    ```
+3.  **Install Dependencies:**
 
-2.  **Create and activate a virtual environment (recommended):**
-    ```sh
-    python3 -m venv venv
-    source venv/bin/activate
-    ```
+        pip install -r requirements.txt
 
-3.  **Install the required packages:**
-    ```sh
-    pip install -r requirements.txt
-    ```
+4.  **Configuration:**
+    *   The application will automatically generate a `.env` file and a `models.json` file on the first run if they are missing.
+    *   Open `.env` and paste your API key:
 
-4.  **Configure your API Key:**
-    The script will automatically create a `.env` file on the first run if it doesn't exist. Open the `.env` file and replace `"YOUR_API_KEY_HERE"` with your actual OpenRouter API key.
-    ```
-    OPENROUTER_API_KEY="sk-or-v1-..."
-    ```
+            OPENROUTER_API_KEY="sk-or-v1-..."
 
-5.  **Run the application:**
-    ```sh
-    python3 yaog.py
-    ```
+    *   (Optional) Edit `models.json` to add your preferred OpenRouter model IDs.
 
-### Project Status
+---
 
-This project is actively under development and is currently focused on completing **Milestone 1: Build the Core MVP**. The immediate next steps involve implementing the database backend for conversation persistence and improving the chat rendering logic.
+## Usage
 
-### Contributing
+### Running the App
 
-Contributions are welcome! If you have a suggestion or find a bug, please open an issue. If you'd like to contribute code, please fork the repository and submit a pull request.
+    python yaog.py
 
-### License
+### Workflow
+1.  **Select a Model:** Choose a model from the dropdown in the top-right.
+2.  **Set System Prompt (Optional):** Select a pre-saved prompt or click "Manage Prompts" to create a new one.
+3.  **Attach Files:** Click the "Attach" button to select files. They will appear in the staging area above the input box.
+4.  **Chat:** Type your message and hit "Send".
+5.  **Manage History:**
+    *   Click a chat in the left sidebar to load it.
+    *   **Right-click** a chat title to Rename or Delete it.
 
-This project is licensed under the MIT License - see the `LICENSE` file for details.
+---
+
+## Architecture
+
+The application follows a modular design separating UI, Logic, and Data:
+
+*   **`yaog.py`**: Main entry point. Handles the `QMainWindow`, UI layout, and connects signals/slots.
+*   **`api_manager.py`**: Handles HTTP requests to OpenRouter using `httpx` (supports SSE streaming).
+*   **`database_manager.py`**: Manages the SQLite database (Schema migration, CRUD for Chats/Messages/Prompts).
+*   **`worker_manager.py`**: Runs API calls in background threads (`QThreadPool`) to keep the UI responsive.
+*   **`chat_template.html`**: The frontend view layer running inside `QWebEngineView`.
+*   **`utils.py`**: Utilities for file extraction (`FileExtractor`), token counting (`TokenCounter`), and crash handling.
+
+---
+
+## Roadmap
+
+### Completed
+*   [x] Core MVP (Chat, History, Settings).
+*   [x] Database Persistence.
+*   [x] System Prompt Management (CRUD).
+*   [x] File Attachments (PDF & Text).
+*   [x] Markdown Rendering.
+*   [x] Context Menu (Rename/Delete).
+*   [x] Token Counter.
+
+### Upcoming / Postponed
+*   [ ] **History Organization:** Search functionality and Tagging system for conversations (Postponed to future milestone).
+*   [ ] **UI Theming:** Night/Day mode toggles and font size adjustments.
+*   [ ] **Batch Uploads:** Enhanced UI for selecting multiple documents simultaneously.
+*   [ ] **Packaging:** Build scripts (PyInstaller) for standalone executables.
+
+---
+
+## License
+This project is open-source. Feel free to modify and distribute.

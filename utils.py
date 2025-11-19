@@ -1,8 +1,12 @@
 # utils.py for OR-Client (yaog.py)
-# Version: 1.3
+# Version: 1.4
 # Description: A module for general-purpose utility functions and classes.
 #              Includes crash handling, file setup, stdout redirection,
-#              and file content extraction/formatting.
+#              file content extraction, and token counting.
+#
+# Change Log (v1.4):
+# - Added TokenCounter class using tiktoken.
+# - Added strip_attachments_for_copy() to FileExtractor.
 
 import sys
 import json
@@ -24,6 +28,13 @@ try:
 except ImportError:
     print("[WARNING] PyMuPDF (fitz) not found. PDF extraction will fail. Run: pip install pymupdf", file=sys.stderr)
     fitz = None
+
+# --- Tiktoken Import ---
+try:
+    import tiktoken
+except ImportError:
+    print("[WARNING] tiktoken not found. Token counting will be disabled. Run: pip install tiktoken", file=sys.stderr)
+    tiktoken = None
 
 
 def crash_handler(exctype, value, tb):
@@ -89,6 +100,41 @@ class LogStream(QObject):
 
     def flush(self):
         pass
+
+
+class TokenCounter:
+    """
+    Handles token counting using tiktoken.
+    Uses 'cl100k_base' encoding (standard for GPT-4/3.5 and many modern models).
+    """
+    def __init__(self):
+        self.encoding = None
+        if tiktoken:
+            try:
+                self.encoding = tiktoken.get_encoding("cl100k_base")
+            except Exception as e:
+                print(f"[WARNING] Failed to load tiktoken encoding: {e}")
+
+    def count_tokens(self, messages: list) -> int:
+        """
+        Counts tokens for a list of message dictionaries.
+        Approximation based on OpenAI's chat format.
+        """
+        if not self.encoding:
+            return 0
+        
+        num_tokens = 0
+        for message in messages:
+            # Every message follows <im_start>{role/name}\n{content}<im_end>\n
+            num_tokens += 4 
+            for key, value in message.items():
+                if key == "content" and value:
+                    num_tokens += len(self.encoding.encode(value))
+                elif key == "role":
+                    num_tokens += len(self.encoding.encode(value))
+        
+        num_tokens += 2  # every reply is primed with <im_start>assistant
+        return num_tokens
 
 
 class FileExtractor:
@@ -178,12 +224,36 @@ class FileExtractor:
         clean_text = re.sub(pattern, "", text, flags=re.DOTALL).strip()
 
         # 3. Escape the user text for HTML safety (since UI now uses innerHTML)
-        safe_text = html.escape(clean_text)
+        # Note: If Markdown is enabled later, this step might be handled differently in main logic.
+        # But this method is specifically for "UI Display" preparation.
+        # We will return the raw text here if we want markdown to handle it? 
+        # No, this method is legacy for the non-markdown path or pre-processing.
+        # Let's keep it returning safe HTML for the default path.
+        
+        # Actually, to support Markdown properly, we should return the "Clean Text" 
+        # and the "Indicators" separately, or return a structure.
+        # However, to minimize refactoring risk, we will assume this returns 
+        # the "Source Text" for the UI to render.
+        
+        # Wait, if we escape here, Markdown won't work on the user's actual text.
+        # We should split this logic. But for now, let's assume this is used 
+        # when we want to display the "Safe" version.
+        
+        # For the new Markdown feature, we will likely do the regex stripping manually in yaog.py
+        # or use a new method.
+        
+        return clean_text, matches
 
-        # 4. Generate HTML indicators
-        indicators = ""
-        for filename, _ in matches:
-            # Using the class defined in chat_template.html
-            indicators += f'<span class="attachment-indicator">📎 [Attached: {filename}]</span>'
-
-        return safe_text + indicators
+    @staticmethod
+    def strip_attachments_for_copy(text: str) -> str:
+        """
+        Removes the hidden file content block but leaves a plain text indicator
+        for the clipboard.
+        """
+        pattern = r'<div class="yaog-file-content" data-filename="([^"]+)">(.*?)</div>'
+        
+        def replacement(match):
+            filename = match.group(1)
+            return f"\n[Attached: {filename}]\n"
+            
+        return re.sub(pattern, replacement, text, flags=re.DOTALL).strip()

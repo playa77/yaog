@@ -1,14 +1,13 @@
 # YaOG -- Yet another Openrouter GUI
-# Version: 2.3.2
-# Description: Instructive Roadmap - M2, T2 (File Attachment Logic)
+# Version: 2.4.3
+# Description: Instructive Roadmap - M2, T3 (Core UX Enhancements) + UI Lock
 #
-# Change Log (v2.3.2):
-# - [FIX] Updated UI rendering logic to support HTML-based attachment indicators.
-# - [FIX] Added HTML escaping for Assistant messages to prevent code blocks
-#   from being interpreted as HTML tags by the new frontend renderer.
+# Change Log (v2.4.3):
+# - [UX] Removed Dock Widget Title Bars (headers) completely.
+# - [UX] Locked Dock Widgets (disabled closing and floating).
 #
-# Change Log (v2.3):
-# - Implemented File Attachment Logic.
+# Change Log (v2.4.2):
+# - [FIX] Added explicit headers inside the Left Dock for layout clarity.
 
 import os
 import sys
@@ -16,12 +15,13 @@ import json
 import time
 import signal
 import html
+import re
 from pathlib import Path
 
 # --- Local Imports ---
 from api_manager import ApiManager
 from database_manager import DatabaseManager
-from utils import crash_handler, setup_project_files, LogStream, FileExtractor
+from utils import crash_handler, setup_project_files, LogStream, FileExtractor, TokenCounter
 from worker_manager import ApiWorker
 
 # Register the global exception handler.
@@ -46,17 +46,24 @@ def main_application():
             QApplication, QMainWindow, QDockWidget, QTextEdit, QListWidget,
             QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QComboBox,
             QSlider, QMessageBox, QListWidgetItem, QDialog, QLineEdit, QSplitter,
-            QGroupBox, QFileDialog, QFrame, QSizePolicy
+            QGroupBox, QFileDialog, QFrame, QSizePolicy, QCheckBox, QMenu, QInputDialog
         )
         from PyQt6.QtCore import (
             Qt, QThreadPool, QObject, pyqtSignal, pyqtSlot, QUrl, QTimer, QSize
         )
-        from PyQt6.QtGui import QIcon
+        from PyQt6.QtGui import QIcon, QAction
         from PyQt6.QtWebEngineWidgets import QWebEngineView
         from PyQt6.QtWebEngineCore import QWebEngineProfile
         from PyQt6.QtWebChannel import QWebChannel
         from dotenv import load_dotenv
         
+        # Import markdown library
+        try:
+            import markdown
+        except ImportError:
+            print("[FATAL] 'markdown' library missing. Run: pip install markdown", file=sys.stderr)
+            sys.exit(1)
+
         app = QApplication(sys.argv)
 
         # Gracefully handle Ctrl+C
@@ -83,7 +90,17 @@ def main_application():
         load_dotenv()
 
         class ChatBackend(QObject):
-            message_added = pyqtSignal(str, str, str, name='message_added')
+            # Updated signal signature to include index
+            message_added = pyqtSignal(int, str, str, str, name='message_added')
+            
+            def __init__(self, main_window):
+                super().__init__()
+                self.main_window = main_window
+
+            @pyqtSlot(int)
+            def copy_message(self, index):
+                """Copies the text of a specific message to clipboard, stripping hidden files."""
+                self.main_window.copy_message_to_clipboard(index)
 
         # --- System Prompt Dialog ---
         class SystemPromptDialog(QDialog):
@@ -200,25 +217,26 @@ def main_application():
         class MainWindow(QMainWindow):
             def __init__(self, log_signal):
                 super().__init__()
-                self.setWindowTitle("OR-Client (v2.3.2) - File Attachments")
+                self.setWindowTitle("OR-Client (v2.4.3) - UX Enhancements")
                 self.setGeometry(100, 100, 1400, 900)
                 
                 # Initialize state variables
                 self.models = []
-                self.current_messages = []
+                self.current_messages = [] # List of dicts: {role, content, model_name}
                 self.current_conversation_id = None
-                self.staged_files = [] # List of file paths
+                self.staged_files = [] 
                 
-                # 1. Setup UI first so widgets (like log_output) exist
+                # 1. Setup UI first
                 self._create_docks()
                 self._setup_central_widget()
                 
-                # 2. Connect log signal now that log_output exists
+                # 2. Connect log signal
                 log_signal.connect(self._append_log)
                 
-                # 3. Initialize Managers (prints will now work)
+                # 3. Initialize Managers
                 self.api_manager = ApiManager()
                 self.threadpool = QThreadPool()
+                self.token_counter = TokenCounter()
                 
                 try:
                     self.db_manager = DatabaseManager()
@@ -243,26 +261,38 @@ def main_application():
                 self.log_output.verticalScrollBar().setValue(self.log_output.verticalScrollBar().maximum())
 
             def _create_docks(self):
-                # Left Dock (History)
+                # Left Dock (History & Logs)
                 self.left_dock = QDockWidget("History & Logs", self)
                 self.left_dock.setAllowedAreas(Qt.DockWidgetArea.LeftDockWidgetArea)
+                
+                # REMOVE TITLE BAR & DISABLE CLOSING
+                self.left_dock.setTitleBarWidget(QWidget())
+                self.left_dock.setFeatures(QDockWidget.DockWidgetFeature.NoDockWidgetFeatures)
+
                 left_widget = QWidget()
                 left_layout = QVBoxLayout(left_widget)
-                left_layout.setContentsMargins(0, 5, 0, 0)
+                left_layout.setContentsMargins(5, 5, 5, 5)
+
+                # --- Section 1: History ---
+                left_layout.addWidget(QLabel("<b>Saved Conversations:</b>"))
 
                 hist_btns = QHBoxLayout()
                 self.new_chat_button = QPushButton("New Chat")
                 self.new_chat_button.clicked.connect(self._new_chat)
-                self.delete_chat_button = QPushButton("Delete Chat")
-                self.delete_chat_button.clicked.connect(self._delete_chat)
                 hist_btns.addWidget(self.new_chat_button)
-                hist_btns.addWidget(self.delete_chat_button)
                 left_layout.addLayout(hist_btns)
                 
                 self.history_list = QListWidget()
+                self.history_list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+                self.history_list.customContextMenuRequested.connect(self._show_history_context_menu)
                 self.history_list.itemClicked.connect(self._load_conversation)
                 left_layout.addWidget(self.history_list, 2)
                 
+                left_layout.addSpacing(10)
+
+                # --- Section 2: Logs ---
+                left_layout.addWidget(QLabel("<b>Application Logs:</b>"))
+
                 self.log_output = QTextEdit()
                 self.log_output.setReadOnly(True)
                 self.log_output.setStyleSheet("background-color: #2b2b2b; color: #f0f0f0; font-family: monospace;")
@@ -274,6 +304,11 @@ def main_application():
                 # Right Dock (Controls)
                 self.controls_dock = QDockWidget("Controls", self)
                 self.controls_dock.setAllowedAreas(Qt.DockWidgetArea.RightDockWidgetArea)
+                
+                # REMOVE TITLE BAR & DISABLE CLOSING
+                self.controls_dock.setTitleBarWidget(QWidget())
+                self.controls_dock.setFeatures(QDockWidget.DockWidgetFeature.NoDockWidgetFeatures)
+
                 controls_widget = QWidget()
                 controls_layout = QVBoxLayout(controls_widget)
                 controls_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
@@ -285,7 +320,7 @@ def main_application():
                 
                 controls_layout.addSpacing(10)
 
-                # System Prompt Selection
+                # System Prompt
                 controls_layout.addWidget(QLabel("<b>System Prompt:</b>"))
                 self.sys_prompt_combo = QComboBox()
                 self.sys_prompt_combo.addItem("None (Default)", None)
@@ -308,6 +343,33 @@ def main_application():
                 temp_layout.addWidget(self.temp_slider)
                 temp_layout.addWidget(self.temp_label)
                 controls_layout.addLayout(temp_layout)
+
+                controls_layout.addSpacing(10)
+
+                # Toggles
+                self.chk_markdown = QCheckBox("Render Markdown")
+                self.chk_markdown.setChecked(True)
+                self.chk_markdown.toggled.connect(self._refresh_chat_view)
+                controls_layout.addWidget(self.chk_markdown)
+
+                self.chk_web_search = QCheckBox("Web Search")
+                self.chk_web_search.setToolTip("Enable web search capabilities (if supported by model/API)")
+                controls_layout.addWidget(self.chk_web_search)
+
+                controls_layout.addSpacing(20)
+
+                # Copy Full Chat
+                self.btn_copy_all = QPushButton("Copy Full Conversation")
+                self.btn_copy_all.clicked.connect(self._copy_full_chat)
+                controls_layout.addWidget(self.btn_copy_all)
+
+                controls_layout.addStretch()
+
+                # Token Counter
+                self.token_label = QLabel("Context: 0 tokens")
+                self.token_label.setStyleSheet("color: #888; font-size: 12px;")
+                self.token_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                controls_layout.addWidget(self.token_label)
                 
                 self.controls_dock.setWidget(controls_widget)
                 self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.controls_dock)
@@ -321,7 +383,7 @@ def main_application():
                 self._setup_web_channel()
                 layout.addWidget(self.chat_view, 1)
                 
-                # 2. Staging Area (Hidden by default)
+                # 2. Staging Area
                 self.staging_container = QWidget()
                 self.staging_layout = QHBoxLayout(self.staging_container)
                 self.staging_layout.setContentsMargins(0, 0, 0, 0)
@@ -329,7 +391,7 @@ def main_application():
                 self.staging_container.setVisible(False)
                 layout.addWidget(self.staging_container)
 
-                # 3. Input Area (Text + Attach Button)
+                # 3. Input Area
                 input_layout = QHBoxLayout()
                 
                 self.input_box = QTextEdit()
@@ -337,7 +399,6 @@ def main_application():
                 self.input_box.setFixedHeight(100)
                 input_layout.addWidget(self.input_box)
                 
-                # Attach Button
                 self.attach_btn = QPushButton("Attach")
                 self.attach_btn.setToolTip("Attach File (PDF, Text, Code)")
                 self.attach_btn.setFixedSize(60, 100)
@@ -354,7 +415,7 @@ def main_application():
                 self.setCentralWidget(central_widget)
 
             def _setup_web_channel(self):
-                self.chat_backend = ChatBackend()
+                self.chat_backend = ChatBackend(self)
                 self.channel = QWebChannel()
                 self.channel.registerObject("backend", self.chat_backend)
                 self.chat_view.page().setWebChannel(self.channel)
@@ -381,7 +442,6 @@ def main_application():
                     self.history_list.addItem(item)
 
             def _populate_system_prompts(self):
-                """Refreshes the system prompt combo box."""
                 current_data = self.sys_prompt_combo.currentData()
                 self.sys_prompt_combo.clear()
                 self.sys_prompt_combo.addItem("None (Default)", None)
@@ -390,10 +450,43 @@ def main_application():
                 for p in prompts:
                     self.sys_prompt_combo.addItem(p['name'], p['prompt_text'])
                 
-                # Restore selection if possible
                 index = self.sys_prompt_combo.findData(current_data)
                 if index >= 0:
                     self.sys_prompt_combo.setCurrentIndex(index)
+
+            # --- Context Menu for History ---
+            def _show_history_context_menu(self, position):
+                item = self.history_list.itemAt(position)
+                if not item: return
+
+                menu = QMenu()
+                rename_action = QAction("Rename", self)
+                delete_action = QAction("Delete", self)
+                
+                rename_action.triggered.connect(lambda: self._rename_chat(item))
+                delete_action.triggered.connect(lambda: self._delete_chat_item(item))
+                
+                menu.addAction(rename_action)
+                menu.addAction(delete_action)
+                menu.exec(self.history_list.viewport().mapToGlobal(position))
+
+            def _rename_chat(self, item):
+                convo_id = item.data(Qt.ItemDataRole.UserRole)
+                old_title = item.text()
+                new_title, ok = QInputDialog.getText(self, "Rename Chat", "New Title:", text=old_title)
+                
+                if ok and new_title.strip():
+                    success = self.db_manager.update_conversation_title(convo_id, new_title.strip())
+                    if success:
+                        item.setText(new_title.strip())
+                        gui_print_success(f"Renamed chat to: {new_title}")
+
+            def _delete_chat_item(self, item):
+                convo_id = item.data(Qt.ItemDataRole.UserRole)
+                if QMessageBox.question(self, "Confirm", "Delete this chat?") == QMessageBox.StandardButton.Yes:
+                    self.db_manager.delete_conversation(convo_id)
+                    self.history_list.takeItem(self.history_list.row(item))
+                    if self.current_conversation_id == convo_id: self._new_chat()
 
             @pyqtSlot()
             def _open_prompt_manager(self):
@@ -410,60 +503,142 @@ def main_application():
                 self.input_box.clear()
                 self.history_list.clearSelection()
                 self.chat_view.page().runJavaScript("clearChat();")
-                # Enable prompt selection for new chat
+                
+                # Reset system prompt combo (remove any temporary items)
+                self._populate_system_prompts()
                 self.sys_prompt_combo.setEnabled(True)
+                
+                self._update_token_count()
                 gui_print_info("New chat context initialized.")
-
-            @pyqtSlot()
-            def _delete_chat(self):
-                selected_item = self.history_list.currentItem()
-                if not selected_item: return
-                convo_id = selected_item.data(Qt.ItemDataRole.UserRole)
-                if QMessageBox.question(self, "Confirm", "Delete this chat?") == QMessageBox.StandardButton.Yes:
-                    self.db_manager.delete_conversation(convo_id)
-                    self.history_list.takeItem(self.history_list.row(selected_item))
-                    if self.current_conversation_id == convo_id: self._new_chat()
 
             @pyqtSlot(QListWidgetItem)
             def _load_conversation(self, item):
                 convo_id = item.data(Qt.ItemDataRole.UserRole)
                 if convo_id == self.current_conversation_id: return
 
-                self.chat_view.page().runJavaScript("clearChat();")
+                self.current_conversation_id = convo_id
+                
+                # Load from DB
                 messages_from_db = self.db_manager.get_messages_for_conversation(convo_id)
                 
                 self.current_messages = []
-                self.staged_files = [] # Clear staged files when switching chats
+                self.staged_files = [] 
                 self._update_staging_area()
 
+                # Rebuild memory state
                 for msg in messages_from_db:
                     role = msg["role"]
                     content = msg["content"]
+                    model_used = msg.get("model_used")
                     
-                    # Reconstruct context (Keep full content for LLM)
-                    self.current_messages.append({"role": role, "content": content})
-                    
-                    # Handle UI rendering
-                    if role == "user":
-                        # strip_attachments_for_ui returns safe HTML (escaped text + html tags)
-                        display_content = FileExtractor.strip_attachments_for_ui(content)
-                        self.chat_backend.message_added.emit("user", display_content, "You")
-                    elif role == "assistant":
-                        model_name = "Unknown"
+                    model_name = "Unknown"
+                    if role == "assistant":
                         for i in range(self.model_combo.count()):
-                            if self.model_combo.itemData(i) == msg["model_used"]:
+                            if self.model_combo.itemData(i) == model_used:
                                 model_name = self.model_combo.itemText(i)
                                 break
-                        # Escape assistant content because frontend uses innerHTML
-                        safe_content = html.escape(content)
-                        self.chat_backend.message_added.emit("assistant", safe_content, model_name)
-                    elif role == "system":
-                        gui_print_info(f"Loaded system prompt: {content[:30]}...")
+                    
+                    self.current_messages.append({
+                        "role": role, 
+                        "content": content,
+                        "model_name": model_name
+                    })
 
-                self.current_conversation_id = convo_id
-                # Disable system prompt selection for existing chats
-                self.sys_prompt_combo.setEnabled(False)
+                # --- System Prompt Sync Logic ---
+                # 1. Reset the combo first to clear old temp items
+                self._populate_system_prompts()
+                
+                # 2. Check if the conversation has a system prompt
+                if self.current_messages and self.current_messages[0]['role'] == 'system':
+                    sys_content = self.current_messages[0]['content']
+                    
+                    # 3. Try to find it in the existing list
+                    index = self.sys_prompt_combo.findData(sys_content)
+                    if index >= 0:
+                        self.sys_prompt_combo.setCurrentIndex(index)
+                    else:
+                        # 4. If not found (Custom), add it temporarily so the user sees it
+                        self.sys_prompt_combo.addItem("[Current Saved Prompt]", sys_content)
+                        self.sys_prompt_combo.setCurrentIndex(self.sys_prompt_combo.count() - 1)
+                else:
+                    # No system prompt in this chat, set to None
+                    self.sys_prompt_combo.setCurrentIndex(0)
+
+                # Ensure it is ENABLED so user can change it mid-convo
+                self.sys_prompt_combo.setEnabled(True)
+
+                self._refresh_chat_view()
+                self._update_token_count()
                 gui_print_success(f"Loaded conversation {convo_id}.")
+
+            def _refresh_chat_view(self):
+                """Re-renders the entire chat view based on current messages and settings."""
+                self.chat_view.page().runJavaScript("clearChat();")
+                
+                render_markdown = self.chk_markdown.isChecked()
+                
+                for index, msg in enumerate(self.current_messages):
+                    role = msg["role"]
+                    content = msg["content"]
+                    model_name = msg.get("model_name", "")
+
+                    if role == "system":
+                        continue # Don't show system prompts in chat bubble flow
+
+                    # 1. Separate Attachments from Text
+                    clean_text, attachments = FileExtractor.strip_attachments_for_ui(content)
+                    
+                    # 2. Process Text (Markdown or Plain)
+                    if render_markdown:
+                        # Convert to HTML using markdown lib
+                        # extensions=['fenced_code', 'tables'] handles code blocks and tables
+                        html_text = markdown.markdown(clean_text, extensions=['fenced_code', 'tables'])
+                    else:
+                        html_text = html.escape(clean_text)
+
+                    # 3. Re-append Attachment Indicators
+                    indicators = ""
+                    for filename, _ in attachments:
+                        indicators += f'<span class="attachment-indicator">📎 [Attached: {filename}]</span>'
+                    
+                    final_html = html_text + indicators
+                    
+                    # 4. Send to Frontend
+                    # We pass 'index' so the frontend can ask us to copy the source later
+                    self.chat_backend.message_added.emit(index, role, final_html, model_name)
+
+            # --- Token Counting ---
+            def _update_token_count(self):
+                count = self.token_counter.count_tokens(self.current_messages)
+                self.token_label.setText(f"Context: ~{count:,} tokens")
+
+            # --- Copy Logic ---
+            def copy_message_to_clipboard(self, index):
+                if 0 <= index < len(self.current_messages):
+                    msg = self.current_messages[index]
+                    raw_content = msg["content"]
+                    # Strip hidden file data, keep indicator
+                    clean_content = FileExtractor.strip_attachments_for_copy(raw_content)
+                    QApplication.clipboard().setText(clean_content)
+                    gui_print_info("Message copied to clipboard.")
+
+            def _copy_full_chat(self):
+                full_text = ""
+                for msg in self.current_messages:
+                    role = msg["role"]
+                    if role == "system": continue
+                    
+                    raw_content = msg["content"]
+                    clean_content = FileExtractor.strip_attachments_for_copy(raw_content)
+                    
+                    header = "You" if role == "user" else f"Assistant ({msg.get('model_name', 'AI')})"
+                    full_text += f"--- {header} ---\n{clean_content}\n\n"
+                
+                if full_text:
+                    QApplication.clipboard().setText(full_text)
+                    gui_print_success("Full conversation copied to clipboard.")
+                else:
+                    gui_print_warning("Nothing to copy.")
 
             # --- File Attachment Logic ---
 
@@ -486,7 +661,6 @@ def main_application():
                     self._update_staging_area()
 
             def _update_staging_area(self):
-                # Clear existing widgets
                 while self.staging_layout.count():
                     child = self.staging_layout.takeAt(0)
                     if child.widget():
@@ -500,8 +674,6 @@ def main_application():
                 
                 for fpath in self.staged_files:
                     fname = Path(fpath).name
-                    
-                    # Chip Widget
                     chip = QFrame()
                     chip.setStyleSheet("background-color: #3c3c3c; border-radius: 5px; padding: 2px;")
                     chip_layout = QHBoxLayout(chip)
@@ -514,20 +686,16 @@ def main_application():
                     btn_del = QPushButton("x")
                     btn_del.setFixedSize(20, 20)
                     btn_del.setStyleSheet("background-color: #d32f2f; color: white; border: none; border-radius: 10px; font-weight: bold;")
-                    # Use default arg in lambda to capture current fpath
                     btn_del.clicked.connect(lambda checked, p=fpath: self._remove_staged_file(p))
                     chip_layout.addWidget(btn_del)
                     
                     self.staging_layout.addWidget(chip)
-                
-                # Add stretch to push chips to the left
                 self.staging_layout.addStretch()
 
             @pyqtSlot()
             def send_message(self):
                 user_text = self.input_box.toPlainText().strip()
                 
-                # Validate: Must have text OR files
                 if not user_text and not self.staged_files:
                     return
                 
@@ -538,6 +706,27 @@ def main_application():
                 model_id = self.model_combo.currentData()
                 temperature = self.temp_slider.value() / 100.0
 
+                # --- SYSTEM PROMPT SYNC ---
+                # Ensure the context matches the dropdown selection before generating
+                selected_prompt = self.sys_prompt_combo.currentData()
+                
+                # 1. Check if we already have a system prompt in memory
+                if self.current_messages and self.current_messages[0]['role'] == 'system':
+                    if selected_prompt:
+                        # Update existing
+                        self.current_messages[0]['content'] = selected_prompt
+                    else:
+                        # Remove existing (User selected None)
+                        self.current_messages.pop(0)
+                elif selected_prompt:
+                    # 2. No system prompt exists, but one is selected -> Insert it
+                    self.current_messages.insert(0, {
+                        "role": "system", 
+                        "content": selected_prompt, 
+                        "model_name": "System"
+                    })
+                # --------------------------
+
                 # --- Process Attachments ---
                 full_message_content = user_text
                 
@@ -547,23 +736,18 @@ def main_application():
                         try:
                             raw_content = FileExtractor.extract_content(fpath)
                             fname = Path(fpath).name
-                            
-                            # Create payload for DB/LLM (contains full content)
                             attachment_payload = FileExtractor.create_attachment_payload(fname, raw_content)
                             full_message_content += attachment_payload
-                            
                         except Exception as e:
                             gui_print_error(f"Failed to attach {fname}: {e}")
                             QMessageBox.warning(self, "Attachment Error", f"Could not read {fname}:\n{e}")
-                            return # Stop sending if attachment fails
+                            return 
 
-                    # Clear staging after successful processing
                     self.staged_files = []
                     self._update_staging_area()
 
                 # --- New Conversation Logic ---
                 if self.current_conversation_id is None:
-                    # Use original user text for title, not the huge attachment string
                     title_text = user_text if user_text else "File Attachment"
                     title = title_text[:40] + "..." if len(title_text) > 40 else title_text
                     
@@ -577,27 +761,40 @@ def main_application():
                     self.history_list.insertItem(0, new_item)
                     self.history_list.setCurrentItem(new_item)
                     
-                    # Inject System Prompt
-                    sys_prompt_content = self.sys_prompt_combo.currentData()
-                    if sys_prompt_content:
-                        self.db_manager.add_message(new_id, "system", sys_prompt_content, None, None)
-                        self.current_messages.append({"role": "system", "content": sys_prompt_content})
-                        self.sys_prompt_combo.setEnabled(False)
+                    # Note: System prompt is already handled by the Sync block above for the API context.
+                    # But we should save it to DB for persistence if it exists.
+                    if self.current_messages and self.current_messages[0]['role'] == 'system':
+                        self.db_manager.add_message(new_id, "system", self.current_messages[0]['content'], None, None)
 
                 # --- Handle User Message ---
-                # 1. Save full content (with attachments) to DB
                 self.db_manager.add_message(self.current_conversation_id, "user", full_message_content, None, None)
                 
-                # 2. Update Context (LLM needs full content)
-                self.current_messages.append({"role": "user", "content": full_message_content})
+                # Update Context
+                self.current_messages.append({
+                    "role": "user", 
+                    "content": full_message_content,
+                    "model_name": "You"
+                })
                 
-                # 3. Update UI (Strip attachments so user NEVER sees them)
-                # strip_attachments_for_ui returns safe HTML (escaped text + html tags)
-                display_content = FileExtractor.strip_attachments_for_ui(full_message_content)
-                self.chat_backend.message_added.emit("user", display_content, "You")
+                # Update UI (Append just this message to avoid full refresh flicker)
+                new_msg_index = len(self.current_messages) - 1
+                
+                # Render logic for this single message
+                clean_text, attachments = FileExtractor.strip_attachments_for_ui(full_message_content)
+                if self.chk_markdown.isChecked():
+                    html_text = markdown.markdown(clean_text, extensions=['fenced_code', 'tables'])
+                else:
+                    html_text = html.escape(clean_text)
+                
+                indicators = ""
+                for filename, _ in attachments:
+                    indicators += f'<span class="attachment-indicator">📎 [Attached: {filename}]</span>'
+                
+                self.chat_backend.message_added.emit(new_msg_index, "user", html_text + indicators, "You")
                 
                 self.input_box.clear()
                 self.set_ui_enabled(False)
+                self._update_token_count()
 
                 worker = ApiWorker(self.api_manager, model_id, self.current_messages, temperature)
                 worker.signals.finished.connect(self.handle_api_response)
@@ -608,7 +805,13 @@ def main_application():
             def handle_api_response(self, response):
                 try:
                     content = response['choices'][0]['message']['content']
-                    self.current_messages.append({"role": "assistant", "content": content})
+                    model_name = self.model_combo.currentText()
+                    
+                    self.current_messages.append({
+                        "role": "assistant", 
+                        "content": content,
+                        "model_name": model_name
+                    })
                     
                     if self.current_conversation_id:
                         self.db_manager.add_message(
@@ -616,9 +819,15 @@ def main_application():
                             self.model_combo.currentData(), self.temp_slider.value() / 100.0
                         )
                     
-                    # Escape assistant content because frontend uses innerHTML
-                    safe_content = html.escape(content)
-                    self.chat_backend.message_added.emit("assistant", safe_content, self.model_combo.currentText())
+                    # Render Assistant Response
+                    new_msg_index = len(self.current_messages) - 1
+                    if self.chk_markdown.isChecked():
+                        html_content = markdown.markdown(content, extensions=['fenced_code', 'tables'])
+                    else:
+                        html_content = html.escape(content)
+                        
+                    self.chat_backend.message_added.emit(new_msg_index, "assistant", html_content, model_name)
+                    self._update_token_count()
                 except Exception as e:
                     self.handle_api_error(f"Parse error: {e}")
                 finally:

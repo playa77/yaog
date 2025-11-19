@@ -1,10 +1,9 @@
 <!-- chat_template.html for OR-Client (yaog.py) -->
-<!-- Version: 2.1 -->
+<!-- Version: 2.2 -->
 <!-- Description: The frontend view for the chat interface. -->
-<!-- Change Log (v2.1): -->
-<!-- - Switched rendering from textContent to innerHTML to support -->
-<!--   HTML-based attachment indicators. -->
-<!-- - Added .content-body class to preserve whitespace. -->
+<!-- Change Log (v2.2): -->
+<!-- - Added Copy buttons to message bubbles. -->
+<!-- - Added JS logic to call backend.copy_message(index). -->
 
 <!DOCTYPE html>
 <html>
@@ -25,6 +24,7 @@
         #chat-container {
             display: flex;
             flex-direction: column;
+            padding-bottom: 20px;
         }
 
         .message {
@@ -33,6 +33,7 @@
             margin-bottom: 15px;
             max-width: 85%;
             line-height: 1.5;
+            position: relative; /* For absolute positioning of copy button if needed */
         }
 
         .user {
@@ -47,10 +48,34 @@
             align-self: flex-start;
         }
 
-        .message strong {
-            color: #ffffff;
-            display: block;
+        .message-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
             margin-bottom: 8px;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+            padding-bottom: 5px;
+        }
+
+        .message-header strong {
+            color: #ffffff;
+        }
+
+        .copy-btn {
+            background-color: transparent;
+            border: 1px solid #666;
+            color: #aaa;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+            padding: 2px 8px;
+            transition: all 0.2s;
+        }
+
+        .copy-btn:hover {
+            background-color: #555;
+            color: white;
+            border-color: #888;
         }
 
         /* 
@@ -69,6 +94,27 @@
             font-size: 0.9em;
             margin-top: 10px;
             display: block;
+            background-color: rgba(0,0,0,0.2);
+            padding: 4px;
+            border-radius: 4px;
+        }
+
+        /* Markdown specific styling */
+        .content-body code {
+            background-color: #1a1a1a;
+            padding: 2px 4px;
+            border-radius: 3px;
+            font-family: monospace;
+        }
+        .content-body pre {
+            background-color: #1a1a1a;
+            padding: 10px;
+            border-radius: 5px;
+            overflow-x: auto;
+        }
+        .content-body pre code {
+            background-color: transparent;
+            padding: 0;
         }
     </style>
 </head>
@@ -77,6 +123,8 @@
     <div id="chat-container"></div>
 
     <script>
+        let backendProxy = null;
+
         function clearChat() {
             const chatContainer = document.getElementById('chat-container');
             chatContainer.innerHTML = '';
@@ -84,33 +132,50 @@
 
         document.addEventListener("DOMContentLoaded", function() {
             new QWebChannel(qt.webChannelTransport, function(channel) {
-                const backend = channel.objects.backend;
-                backend.message_added.connect(appendMessage);
+                backendProxy = channel.objects.backend;
+                backendProxy.message_added.connect(appendMessage);
             });
-
-            function appendMessage(role, content, modelName) {
-                const chatContainer = document.getElementById('chat-container');
-
-                const messageDiv = document.createElement('div');
-                messageDiv.classList.add('message', role);
-
-                const header = document.createElement('strong');
-                header.textContent = (role === 'user') ? "You" : `Assistant (${modelName})`;
-                messageDiv.appendChild(header);
-
-                // Create a container for the content
-                const contentDiv = document.createElement('div');
-                contentDiv.classList.add('content-body');
-                
-                // CRITICAL CHANGE: Use innerHTML to allow rendering of the attachment <span> tags.
-                // The Python backend MUST escape user text to prevent XSS.
-                contentDiv.innerHTML = content; 
-                
-                messageDiv.appendChild(contentDiv);
-                chatContainer.appendChild(messageDiv);
-                window.scrollTo(0, document.body.scrollHeight);
-            }
         });
+
+        // index: The index of the message in the Python list (for copying source)
+        function appendMessage(index, role, content, modelName) {
+            const chatContainer = document.getElementById('chat-container');
+
+            const messageDiv = document.createElement('div');
+            messageDiv.classList.add('message', role);
+
+            // Header Row
+            const headerDiv = document.createElement('div');
+            headerDiv.classList.add('message-header');
+
+            const title = document.createElement('strong');
+            title.textContent = (role === 'user') ? "You" : `Assistant (${modelName})`;
+            headerDiv.appendChild(title);
+
+            // Copy Button
+            const copyBtn = document.createElement('button');
+            copyBtn.textContent = "Copy";
+            copyBtn.classList.add('copy-btn');
+            copyBtn.onclick = function() {
+                if (backendProxy) {
+                    backendProxy.copy_message(index);
+                }
+            };
+            headerDiv.appendChild(copyBtn);
+
+            messageDiv.appendChild(headerDiv);
+
+            // Content Body
+            const contentDiv = document.createElement('div');
+            contentDiv.classList.add('content-body');
+            
+            // Use innerHTML to allow rendering of HTML (Markdown or Attachment spans)
+            contentDiv.innerHTML = content; 
+            
+            messageDiv.appendChild(contentDiv);
+            chatContainer.appendChild(messageDiv);
+            window.scrollTo(0, document.body.scrollHeight);
+        }
     </script>
 
 </body>

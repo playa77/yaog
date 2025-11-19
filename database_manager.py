@@ -1,7 +1,10 @@
 # database_manager.py for OR-Client (yaog.py)
-# Version: 2.1
+# Version: 2.2
 # Description: A dedicated module to handle all SQLite database interactions.
 #              Includes schema migration logic for v2.0+ (System Prompts).
+#
+# Change Log (v2.2):
+# - Added update_conversation_title() for renaming chats.
 
 import sqlite3
 from pathlib import Path
@@ -52,7 +55,6 @@ class DatabaseManager:
             """)
 
             # Table for messages
-            # Note: role can now be 'system' as well.
             self.cursor.execute("""
                 CREATE TABLE IF NOT EXISTS messages (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -151,8 +153,6 @@ class DatabaseManager:
 
         except sqlite3.Error as e:
             print(f"\033[91m[DB ERROR] Migration failed: {e}\033[0m", file=sys.stderr)
-            # We do not exit here, hoping the app might still function partially, 
-            # but usually this is fatal for persistence.
 
     # --- Conversation & Message CRUD ---
 
@@ -165,6 +165,17 @@ class DatabaseManager:
         except sqlite3.Error as e:
             print(f"\033[91m[DB ERROR] Failed to add conversation: {e}\033[0m", file=sys.stderr)
             return -1
+
+    def update_conversation_title(self, conversation_id: int, new_title: str) -> bool:
+        """Updates the title of a conversation."""
+        sql = "UPDATE conversations SET title = ? WHERE id = ?"
+        try:
+            with self.conn:
+                self.cursor.execute(sql, (new_title, conversation_id))
+                return True
+        except sqlite3.Error as e:
+            print(f"\033[91m[DB ERROR] Failed to rename conversation {conversation_id}: {e}\033[0m", file=sys.stderr)
+            return False
 
     def add_message(self, conversation_id: int, role: str, content: str, model: str, temp: float):
         sql = """
@@ -208,10 +219,9 @@ class DatabaseManager:
         except sqlite3.Error as e:
             print(f"\033[91m[DB ERROR] Failed to delete conversation {conversation_id}: {e}\033[0m", file=sys.stderr)
 
-    # --- System Prompt CRUD (Milestone 2) ---
+    # --- System Prompt CRUD ---
 
     def add_system_prompt(self, name: str, prompt_text: str) -> int:
-        """Creates a new system prompt."""
         sql = "INSERT INTO system_prompts (name, prompt_text) VALUES (?, ?)"
         try:
             with self.conn:
@@ -225,7 +235,6 @@ class DatabaseManager:
             return -1
 
     def get_all_system_prompts(self) -> list:
-        """Retrieves all system prompts."""
         sql = "SELECT id, name, prompt_text FROM system_prompts ORDER BY name ASC"
         try:
             self.cursor.execute(sql)
@@ -235,7 +244,6 @@ class DatabaseManager:
             return []
 
     def update_system_prompt(self, prompt_id: int, name: str, prompt_text: str) -> bool:
-        """Updates an existing system prompt."""
         sql = "UPDATE system_prompts SET name = ?, prompt_text = ? WHERE id = ?"
         try:
             with self.conn:
@@ -246,7 +254,6 @@ class DatabaseManager:
             return False
 
     def delete_system_prompt(self, prompt_id: int) -> bool:
-        """Deletes a system prompt."""
         sql = "DELETE FROM system_prompts WHERE id = ?"
         try:
             with self.conn:
