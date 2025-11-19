@@ -1,9 +1,7 @@
 # database_manager.py for OR-Client (yaog.py)
-# Version: 1.9
+# Version: 2.0
 # Description: A dedicated module to handle all SQLite database interactions.
-#              This class encapsulates all SQL logic, following the separation
-#              of concerns principle. It manages the database file, schema
-#              creation, and provides CRUD methods for the application.
+#              Updated for Milestone 2: System Prompt Management.
 
 import sqlite3
 from pathlib import Path
@@ -16,51 +14,34 @@ class DatabaseManager:
     def __init__(self):
         """
         Initializes the DatabaseManager.
-        - Sets up the database path in a user-specific directory.
-        - Connects to the SQLite database.
-        - Enables foreign key support.
-        - Ensures the database schema is created.
         """
-        # Determine the path for the database file.
-        # Using Path.home() / '.or-client' is a simple cross-platform way
-        # to store user-specific application data.
         try:
             db_dir = Path.home() / '.or-client'
-            db_dir.mkdir(parents=True, exist_ok=True) # Ensure the directory exists
+            db_dir.mkdir(parents=True, exist_ok=True)
             self.db_path = db_dir / 'or-client.db'
             
             print(f"[INFO] Database path set to: {self.db_path}")
             
             self.conn = sqlite3.connect(self.db_path)
-            # This row_factory allows accessing columns by name (e.g., row['id']),
-            # which is much more readable and robust than using indices.
             self.conn.row_factory = sqlite3.Row 
             self.cursor = self.conn.cursor()
             
-            # Enable foreign key support. It's off by default in SQLite and is
-            # crucial for maintaining data integrity (e.g., cascading deletes).
             self.cursor.execute("PRAGMA foreign_keys = ON;")
             self.conn.commit()
             
-            # Ensure the database schema is created.
             self._create_tables()
             
         except (sqlite3.Error, OSError) as e:
             print(f"\033[91m[DB FATAL] Database initialization failed: {e}\033[0m", file=sys.stderr)
-            # If the DB can't be initialized, the app can't function with persistence.
-            # Re-raising the exception to be handled by the main application.
             raise
 
     def _create_tables(self):
         """
         Creates all necessary tables in the database if they do not already exist.
-        This method is idempotent and safe to run on every application startup.
         """
         print("[INFO] Verifying database schema...")
         try:
-            # Using multiline strings for readability of SQL commands.
-            
-            # Table for storing conversations
+            # Table for conversations
             self.cursor.execute("""
                 CREATE TABLE IF NOT EXISTS conversations (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -69,14 +50,13 @@ class DatabaseManager:
                 );
             """)
 
-            # Table for storing individual messages within a conversation
-            # ON DELETE CASCADE ensures that if a conversation is deleted,
-            # all its associated messages are also deleted automatically.
+            # Table for messages
+            # Note: role can now be 'system' as well.
             self.cursor.execute("""
                 CREATE TABLE IF NOT EXISTS messages (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     conversation_id INTEGER NOT NULL,
-                    role TEXT NOT NULL CHECK(role IN ('user', 'assistant')),
+                    role TEXT NOT NULL CHECK(role IN ('user', 'assistant', 'system')),
                     content TEXT NOT NULL,
                     model_used TEXT,
                     temperature_used REAL,
@@ -102,7 +82,7 @@ class DatabaseManager:
                 );
             """)
 
-            # A linking table for the many-to-many relationship between conversations and tags
+            # Linking table for tags
             self.cursor.execute("""
                 CREATE TABLE IF NOT EXISTS conversation_tags (
                     conversation_id INTEGER NOT NULL,
@@ -117,42 +97,22 @@ class DatabaseManager:
             print("[INFO] Database schema verified successfully.")
         except sqlite3.Error as e:
             print(f"\033[91m[DB ERROR] Failed to create tables: {e}\033[0m", file=sys.stderr)
-            self.conn.rollback() # Rollback changes if an error occurs
+            self.conn.rollback()
             raise
 
-    # --- Core CRUD Methods ---
+    # --- Conversation & Message CRUD ---
 
     def add_conversation(self, title: str) -> int:
-        """
-        Creates a new conversation record and returns the new conversation_id.
-        
-        Args:
-            title (str): The initial title for the conversation.
-            
-        Returns:
-            int: The ID of the newly created conversation, or -1 on failure.
-        """
         sql = "INSERT INTO conversations (title) VALUES (?)"
         try:
-            # 'with self.conn:' automatically handles commits and rollbacks.
             with self.conn:
                 self.cursor.execute(sql, (title,))
                 return self.cursor.lastrowid
         except sqlite3.Error as e:
             print(f"\033[91m[DB ERROR] Failed to add conversation: {e}\033[0m", file=sys.stderr)
-            return -1 # Return an invalid ID on failure
+            return -1
 
     def add_message(self, conversation_id: int, role: str, content: str, model: str, temp: float):
-        """
-        Saves a message linked to a specific conversation.
-        
-        Args:
-            conversation_id (int): The ID of the conversation this message belongs to.
-            role (str): The role of the sender ('user' or 'assistant').
-            content (str): The text content of the message.
-            model (str): The model ID used for the assistant's response.
-            temp (float): The temperature setting used for the response.
-        """
         sql = """
             INSERT INTO messages (conversation_id, role, content, model_used, temperature_used)
             VALUES (?, ?, ?, ?, ?)
@@ -164,33 +124,15 @@ class DatabaseManager:
             print(f"\033[91m[DB ERROR] Failed to add message for conversation {conversation_id}: {e}\033[0m", file=sys.stderr)
 
     def get_all_conversations(self) -> list:
-        """
-        Retrieves a list of all conversations, ordered by creation date (newest first).
-        
-        Returns:
-            list: A list of dictionaries, where each dictionary represents a conversation.
-                  Returns an empty list on failure.
-        """
         sql = "SELECT id, title, created_at FROM conversations ORDER BY created_at DESC"
         try:
-            # No need for 'with self.conn' for read-only queries, but it's harmless.
             self.cursor.execute(sql)
-            # Convert the list of sqlite3.Row objects to a list of dictionaries.
             return [dict(row) for row in self.cursor.fetchall()]
         except sqlite3.Error as e:
             print(f"\033[91m[DB ERROR] Failed to get all conversations: {e}\033[0m", file=sys.stderr)
-            return [] # Return an empty list on failure
+            return []
 
     def get_messages_for_conversation(self, conversation_id: int) -> list:
-        """
-        Retrieves all messages for a given conversation, ordered by timestamp.
-        
-        Args:
-            conversation_id (int): The ID of the conversation to retrieve messages for.
-            
-        Returns:
-            list: A list of dictionaries representing the messages. Empty list on failure.
-        """
         sql = """
             SELECT role, content, model_used, temperature_used, timestamp
             FROM messages
@@ -205,12 +147,6 @@ class DatabaseManager:
             return []
 
     def delete_conversation(self, conversation_id: int):
-        """
-        Deletes a conversation and its associated messages (via cascading delete).
-        
-        Args:
-            conversation_id (int): The ID of the conversation to delete.
-        """
         sql = "DELETE FROM conversations WHERE id = ?"
         try:
             with self.conn:
@@ -218,8 +154,55 @@ class DatabaseManager:
         except sqlite3.Error as e:
             print(f"\033[91m[DB ERROR] Failed to delete conversation {conversation_id}: {e}\033[0m", file=sys.stderr)
 
+    # --- System Prompt CRUD (Milestone 2) ---
+
+    def add_system_prompt(self, name: str, prompt_text: str) -> int:
+        """Creates a new system prompt."""
+        sql = "INSERT INTO system_prompts (name, prompt_text) VALUES (?, ?)"
+        try:
+            with self.conn:
+                self.cursor.execute(sql, (name, prompt_text))
+                return self.cursor.lastrowid
+        except sqlite3.IntegrityError:
+            print(f"\033[93m[DB WARNING] System prompt with name '{name}' already exists.\033[0m", file=sys.stderr)
+            return -1
+        except sqlite3.Error as e:
+            print(f"\033[91m[DB ERROR] Failed to add system prompt: {e}\033[0m", file=sys.stderr)
+            return -1
+
+    def get_all_system_prompts(self) -> list:
+        """Retrieves all system prompts."""
+        sql = "SELECT id, name, prompt_text FROM system_prompts ORDER BY name ASC"
+        try:
+            self.cursor.execute(sql)
+            return [dict(row) for row in self.cursor.fetchall()]
+        except sqlite3.Error as e:
+            print(f"\033[91m[DB ERROR] Failed to get system prompts: {e}\033[0m", file=sys.stderr)
+            return []
+
+    def update_system_prompt(self, prompt_id: int, name: str, prompt_text: str) -> bool:
+        """Updates an existing system prompt."""
+        sql = "UPDATE system_prompts SET name = ?, prompt_text = ? WHERE id = ?"
+        try:
+            with self.conn:
+                self.cursor.execute(sql, (name, prompt_text, prompt_id))
+                return True
+        except sqlite3.Error as e:
+            print(f"\033[91m[DB ERROR] Failed to update system prompt {prompt_id}: {e}\033[0m", file=sys.stderr)
+            return False
+
+    def delete_system_prompt(self, prompt_id: int) -> bool:
+        """Deletes a system prompt."""
+        sql = "DELETE FROM system_prompts WHERE id = ?"
+        try:
+            with self.conn:
+                self.cursor.execute(sql, (prompt_id,))
+                return True
+        except sqlite3.Error as e:
+            print(f"\033[91m[DB ERROR] Failed to delete system prompt {prompt_id}: {e}\033[0m", file=sys.stderr)
+            return False
+
     def close(self):
-        """Closes the database connection gracefully."""
         if self.conn:
             self.conn.close()
             self.conn = None
