@@ -1,22 +1,29 @@
 # utils.py for OR-Client (yaog.py)
-# Version: 1.0
-# Description: A module for general-purpose utility functions and classes
-#              to keep the main application script clean. This includes
-#              crash handling, initial file setup, and stdout redirection.
+# Version: 1.3
+# Description: A module for general-purpose utility functions and classes.
+#              Includes crash handling, file setup, stdout redirection,
+#              and file content extraction/formatting.
 
 import sys
 import json
 import traceback
+import html
+import re
 from pathlib import Path
 
 # --- PyQt6 Imports ---
-# Note: It's good practice to keep imports even in utility files,
-# as it makes them self-contained and easier to understand.
 try:
     from PyQt6.QtCore import QObject, pyqtSignal
 except ImportError:
     print("[FATAL] PyQt6 is not installed. Please run: pip install PyQt6", file=sys.stderr)
     sys.exit(1)
+
+# --- PyMuPDF Import ---
+try:
+    import fitz  # PyMuPDF
+except ImportError:
+    print("[WARNING] PyMuPDF (fitz) not found. PDF extraction will fail. Run: pip install pymupdf", file=sys.stderr)
+    fitz = None
 
 
 def crash_handler(exctype, value, tb):
@@ -25,7 +32,6 @@ def crash_handler(exctype, value, tb):
     in a formatted way, and ensure the application exits.
     """
     print("\n\033[91m[CRASH HANDLER] Uncaught Python Exception:\033[0m", file=sys.stderr)
-    # Using sys.__stderr__ to ensure output even if stderr is redirected.
     traceback.print_exception(exctype, value, tb, file=sys.__stderr__)
     sys.exit(1)
 
@@ -79,14 +85,105 @@ class LogStream(QObject):
     log_signal = pyqtSignal(str)
 
     def write(self, text):
-        """
-        This method is called when anything is printed to the console.
-        It emits the text as a signal.
-        """
         self.log_signal.emit(str(text))
 
     def flush(self):
-        """
-        This method is required for the stream interface but is a no-op here.
-        """
         pass
+
+
+class FileExtractor:
+    """
+    Helper class to extract text content from various file formats
+    and format payloads for LLM/UI separation.
+    """
+    
+    @staticmethod
+    def get_supported_extensions():
+        """Returns a filter string for QFileDialog."""
+        return (
+            "All Supported (*.txt *.md *.markdown *.json *.yml *.yaml *.csv *.xml *.html *.css *.ini *.toml *.log "
+            "*.py *.sh *.js *.ts *.c *.cpp *.h *.java *.go *.rs *.php *.rb *.sql *.bat *.pdf);;"
+            "Text/Data (*.txt *.md *.json *.csv *.xml *.log);;"
+            "Code (*.py *.js *.ts *.c *.cpp *.java *.go *.rs *.sql);;"
+            "PDF Documents (*.pdf);;"
+            "All Files (*)"
+        )
+
+    @staticmethod
+    def extract_content(file_path: str) -> str:
+        """
+        Reads the file at file_path and returns its text content.
+        """
+        path = Path(file_path)
+        if not path.exists():
+            raise FileNotFoundError(f"File not found: {file_path}")
+
+        suffix = path.suffix.lower()
+
+        # 1. Handle PDF
+        if suffix == ".pdf":
+            if not fitz:
+                raise ImportError("PyMuPDF is not installed. Cannot parse PDF.")
+            try:
+                text_content = []
+                with fitz.open(path) as doc:
+                    for page in doc:
+                        text_content.append(page.get_text())
+                return "\n".join(text_content)
+            except Exception as e:
+                raise ValueError(f"Failed to parse PDF: {e}")
+
+        # 2. Handle Text/Code (Try UTF-8)
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                return f.read()
+        except UnicodeDecodeError:
+            try:
+                with open(path, "r", encoding="latin-1") as f:
+                    return f.read()
+            except Exception:
+                raise ValueError("File appears to be binary or uses an unsupported encoding.")
+        except Exception as e:
+            raise ValueError(f"Error reading file: {e}")
+
+    @staticmethod
+    def create_attachment_payload(filename: str, content: str) -> str:
+        """
+        Wraps the file content in a specific HTML structure.
+        This structure is saved to the DB and sent to the LLM, 
+        but allows the UI to easily strip it out.
+        """
+        safe_content = html.escape(content)
+        # We use a specific class and data attribute for Regex targeting.
+        return (
+            f'\n<div class="yaog-file-content" data-filename="{filename}">'
+            f'\n--- START OF FILE: {filename} ---\n'
+            f'{safe_content}'
+            f'\n--- END OF FILE: {filename} ---\n'
+            f'</div>'
+        )
+
+    @staticmethod
+    def strip_attachments_for_ui(text: str) -> str:
+        """
+        Removes the actual file content block from the text using Regex,
+        escapes the remaining user text for HTML safety, and appends
+        a clean HTML indicator for the attachment.
+        """
+        # 1. Find all attachment blocks
+        pattern = r'<div class="yaog-file-content" data-filename="([^"]+)">(.*?)</div>'
+        matches = re.findall(pattern, text, flags=re.DOTALL)
+
+        # 2. Remove them from the text to get the raw user input
+        clean_text = re.sub(pattern, "", text, flags=re.DOTALL).strip()
+
+        # 3. Escape the user text for HTML safety (since UI now uses innerHTML)
+        safe_text = html.escape(clean_text)
+
+        # 4. Generate HTML indicators
+        indicators = ""
+        for filename, _ in matches:
+            # Using the class defined in chat_template.html
+            indicators += f'<span class="attachment-indicator">📎 [Attached: {filename}]</span>'
+
+        return safe_text + indicators

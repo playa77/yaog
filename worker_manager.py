@@ -1,12 +1,12 @@
 # worker_manager.py for OR-Client (yaog.py)
-# Version: 1.0
+# Version: 1.1
 # Description: A dedicated module for managing the asynchronous API worker.
-#              This separates the threading and API stream handling logic
-#              from the main GUI class.
+#              Includes robust handling for HTTP 429 (Rate Limit) errors.
 
 import json
 import sys
 import traceback
+import httpx  # Required for exception handling
 
 # --- Local Imports ---
 from api_manager import ApiManager
@@ -96,8 +96,27 @@ class ApiWorker(QRunnable):
             # Emit the 'finished' signal with the complete result.
             self.signals.finished.emit(final_result)
 
+        except httpx.HTTPStatusError as e:
+            # Specific handling for HTTP errors (like 429 Rate Limit)
+            if e.response.status_code == 429:
+                print(f"\033[93m[API WARNING] Rate Limit Exceeded (429).\033[0m")
+                friendly_error = (
+                    "<b>Rate Limit Exceeded (429)</b><br>"
+                    "The free model is currently busy or you have hit a request limit.<br>"
+                    "Please wait a moment or try selecting a different model."
+                )
+                self.signals.error.emit(friendly_error)
+            else:
+                # Handle other HTTP errors
+                error_message = (
+                    f"<b>API HTTP Error</b><br>"
+                    f"Status Code: {e.response.status_code}<br>"
+                    f"Details: {e.response.text[:200]}"
+                )
+                self.signals.error.emit(error_message)
+
         except Exception as e:
-            # Format a detailed error message for the GUI.
+            # Format a detailed error message for the GUI for unexpected crashes
             error_message = (
                 f"<b>API Call Failed</b><br>"
                 f"Model: {self.model_id}<br>"

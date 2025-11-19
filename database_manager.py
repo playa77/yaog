@@ -1,7 +1,7 @@
 # database_manager.py for OR-Client (yaog.py)
-# Version: 2.0
+# Version: 2.1
 # Description: A dedicated module to handle all SQLite database interactions.
-#              Updated for Milestone 2: System Prompt Management.
+#              Includes schema migration logic for v2.0+ (System Prompts).
 
 import sqlite3
 from pathlib import Path
@@ -30,6 +30,7 @@ class DatabaseManager:
             self.conn.commit()
             
             self._create_tables()
+            self._check_and_migrate_schema()
             
         except (sqlite3.Error, OSError) as e:
             print(f"\033[91m[DB FATAL] Database initialization failed: {e}\033[0m", file=sys.stderr)
@@ -94,11 +95,64 @@ class DatabaseManager:
             """)
             
             self.conn.commit()
-            print("[INFO] Database schema verified successfully.")
         except sqlite3.Error as e:
             print(f"\033[91m[DB ERROR] Failed to create tables: {e}\033[0m", file=sys.stderr)
             self.conn.rollback()
             raise
+
+    def _check_and_migrate_schema(self):
+        """
+        Checks if the existing 'messages' table supports the 'system' role.
+        If not (legacy schema), it performs a migration.
+        """
+        try:
+            # 1. Get the SQL used to create the messages table
+            self.cursor.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='messages'")
+            row = self.cursor.fetchone()
+            if not row: return
+
+            create_sql = row['sql']
+
+            # 2. Check if 'system' is missing from the CHECK constraint
+            if "'system'" not in create_sql:
+                print("\033[93m[DB WARNING] Legacy schema detected. Migrating 'messages' table to support System Prompts...\033[0m")
+                
+                with self.conn:
+                    # A. Rename old table
+                    self.cursor.execute("ALTER TABLE messages RENAME TO messages_old")
+                    
+                    # B. Create new table with updated schema
+                    self.cursor.execute("""
+                        CREATE TABLE messages (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            conversation_id INTEGER NOT NULL,
+                            role TEXT NOT NULL CHECK(role IN ('user', 'assistant', 'system')),
+                            content TEXT NOT NULL,
+                            model_used TEXT,
+                            temperature_used REAL,
+                            timestamp TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%f', 'now', 'localtime')),
+                            FOREIGN KEY (conversation_id) REFERENCES conversations (id) ON DELETE CASCADE
+                        )
+                    """)
+                    
+                    # C. Copy data (mapping columns explicitly to be safe)
+                    self.cursor.execute("""
+                        INSERT INTO messages (id, conversation_id, role, content, model_used, temperature_used, timestamp)
+                        SELECT id, conversation_id, role, content, model_used, temperature_used, timestamp
+                        FROM messages_old
+                    """)
+                    
+                    # D. Drop old table
+                    self.cursor.execute("DROP TABLE messages_old")
+                
+                print("\033[92m[SUCCESS] Database migration complete.\033[0m")
+            else:
+                print("[INFO] Database schema is up to date.")
+
+        except sqlite3.Error as e:
+            print(f"\033[91m[DB ERROR] Migration failed: {e}\033[0m", file=sys.stderr)
+            # We do not exit here, hoping the app might still function partially, 
+            # but usually this is fatal for persistence.
 
     # --- Conversation & Message CRUD ---
 

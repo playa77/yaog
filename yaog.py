@@ -1,29 +1,27 @@
 # YaOG -- Yet another Openrouter GUI
-# Version: 2.2.1
-# Description: Instructive Roadmap - M2, T1 (System Prompt Management)
+# Version: 2.3.2
+# Description: Instructive Roadmap - M2, T2 (File Attachment Logic)
 #
-# Change Log (v2.2.1):
-# - [FIX] Reordered MainWindow initialization to prevent AttributeError.
-#   UI elements are now created before connecting the log signal and
-#   initializing managers that print to stdout.
+# Change Log (v2.3.2):
+# - [FIX] Updated UI rendering logic to support HTML-based attachment indicators.
+# - [FIX] Added HTML escaping for Assistant messages to prevent code blocks
+#   from being interpreted as HTML tags by the new frontend renderer.
 #
-# Change Log (v2.2):
-# - Implemented System Prompt Management.
-# - Added `SystemPromptDialog` for creating/editing/deleting prompts.
-# - Updated `MainWindow` controls to include a System Prompt selector.
-# - Updated logic to inject system prompts into new conversations.
+# Change Log (v2.3):
+# - Implemented File Attachment Logic.
 
 import os
 import sys
 import json
 import time
 import signal
+import html
 from pathlib import Path
 
 # --- Local Imports ---
 from api_manager import ApiManager
 from database_manager import DatabaseManager
-from utils import crash_handler, setup_project_files, LogStream
+from utils import crash_handler, setup_project_files, LogStream, FileExtractor
 from worker_manager import ApiWorker
 
 # Register the global exception handler.
@@ -48,11 +46,12 @@ def main_application():
             QApplication, QMainWindow, QDockWidget, QTextEdit, QListWidget,
             QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QComboBox,
             QSlider, QMessageBox, QListWidgetItem, QDialog, QLineEdit, QSplitter,
-            QGroupBox
+            QGroupBox, QFileDialog, QFrame, QSizePolicy
         )
         from PyQt6.QtCore import (
-            Qt, QThreadPool, QObject, pyqtSignal, pyqtSlot, QUrl, QTimer
+            Qt, QThreadPool, QObject, pyqtSignal, pyqtSlot, QUrl, QTimer, QSize
         )
+        from PyQt6.QtGui import QIcon
         from PyQt6.QtWebEngineWidgets import QWebEngineView
         from PyQt6.QtWebEngineCore import QWebEngineProfile
         from PyQt6.QtWebChannel import QWebChannel
@@ -201,13 +200,14 @@ def main_application():
         class MainWindow(QMainWindow):
             def __init__(self, log_signal):
                 super().__init__()
-                self.setWindowTitle("OR-Client (v2.2.1) - System Prompts")
+                self.setWindowTitle("OR-Client (v2.3.2) - File Attachments")
                 self.setGeometry(100, 100, 1400, 900)
                 
                 # Initialize state variables
                 self.models = []
                 self.current_messages = []
                 self.current_conversation_id = None
+                self.staged_files = [] # List of file paths
                 
                 # 1. Setup UI first so widgets (like log_output) exist
                 self._create_docks()
@@ -315,16 +315,42 @@ def main_application():
             def _setup_central_widget(self):
                 central_widget = QWidget()
                 layout = QVBoxLayout(central_widget)
+                
+                # 1. Chat View
                 self.chat_view = QWebEngineView()
                 self._setup_web_channel()
                 layout.addWidget(self.chat_view, 1)
+                
+                # 2. Staging Area (Hidden by default)
+                self.staging_container = QWidget()
+                self.staging_layout = QHBoxLayout(self.staging_container)
+                self.staging_layout.setContentsMargins(0, 0, 0, 0)
+                self.staging_layout.setAlignment(Qt.AlignmentFlag.AlignLeft)
+                self.staging_container.setVisible(False)
+                layout.addWidget(self.staging_container)
+
+                # 3. Input Area (Text + Attach Button)
+                input_layout = QHBoxLayout()
+                
                 self.input_box = QTextEdit()
                 self.input_box.setPlaceholderText("Enter your message here...")
                 self.input_box.setFixedHeight(100)
-                layout.addWidget(self.input_box)
+                input_layout.addWidget(self.input_box)
+                
+                # Attach Button
+                self.attach_btn = QPushButton("Attach")
+                self.attach_btn.setToolTip("Attach File (PDF, Text, Code)")
+                self.attach_btn.setFixedSize(60, 100)
+                self.attach_btn.clicked.connect(self._attach_file)
+                input_layout.addWidget(self.attach_btn)
+                
+                layout.addLayout(input_layout)
+
+                # 4. Send Button
                 self.send_button = QPushButton("Send Message")
                 self.send_button.clicked.connect(self.send_message)
                 layout.addWidget(self.send_button)
+                
                 self.setCentralWidget(central_widget)
 
             def _setup_web_channel(self):
@@ -379,6 +405,8 @@ def main_application():
             def _new_chat(self):
                 self.current_conversation_id = None
                 self.current_messages = []
+                self.staged_files = []
+                self._update_staging_area()
                 self.input_box.clear()
                 self.history_list.clearSelection()
                 self.chat_view.page().runJavaScript("clearChat();")
@@ -405,40 +433,104 @@ def main_application():
                 messages_from_db = self.db_manager.get_messages_for_conversation(convo_id)
                 
                 self.current_messages = []
-                system_prompt_found = False
+                self.staged_files = [] # Clear staged files when switching chats
+                self._update_staging_area()
 
                 for msg in messages_from_db:
                     role = msg["role"]
                     content = msg["content"]
                     
-                    # Reconstruct context
+                    # Reconstruct context (Keep full content for LLM)
                     self.current_messages.append({"role": role, "content": content})
                     
                     # Handle UI rendering
                     if role == "user":
-                        self.chat_backend.message_added.emit("user", content, "You")
+                        # strip_attachments_for_ui returns safe HTML (escaped text + html tags)
+                        display_content = FileExtractor.strip_attachments_for_ui(content)
+                        self.chat_backend.message_added.emit("user", display_content, "You")
                     elif role == "assistant":
                         model_name = "Unknown"
                         for i in range(self.model_combo.count()):
                             if self.model_combo.itemData(i) == msg["model_used"]:
                                 model_name = self.model_combo.itemText(i)
                                 break
-                        self.chat_backend.message_added.emit("assistant", content, model_name)
+                        # Escape assistant content because frontend uses innerHTML
+                        safe_content = html.escape(content)
+                        self.chat_backend.message_added.emit("assistant", safe_content, model_name)
                     elif role == "system":
-                        # We don't render system prompts in the chat bubbles usually,
-                        # but we note it was found.
-                        system_prompt_found = True
                         gui_print_info(f"Loaded system prompt: {content[:30]}...")
 
                 self.current_conversation_id = convo_id
-                # Disable system prompt selection for existing chats to prevent confusion
+                # Disable system prompt selection for existing chats
                 self.sys_prompt_combo.setEnabled(False)
                 gui_print_success(f"Loaded conversation {convo_id}.")
+
+            # --- File Attachment Logic ---
+
+            @pyqtSlot()
+            def _attach_file(self):
+                filter_str = FileExtractor.get_supported_extensions()
+                file_path, _ = QFileDialog.getOpenFileName(self, "Attach File", "", filter_str)
+                
+                if file_path:
+                    if file_path not in self.staged_files:
+                        self.staged_files.append(file_path)
+                        self._update_staging_area()
+                        gui_print_info(f"Staged file: {Path(file_path).name}")
+                    else:
+                        gui_print_warning("File already attached.")
+
+            def _remove_staged_file(self, path_to_remove):
+                if path_to_remove in self.staged_files:
+                    self.staged_files.remove(path_to_remove)
+                    self._update_staging_area()
+
+            def _update_staging_area(self):
+                # Clear existing widgets
+                while self.staging_layout.count():
+                    child = self.staging_layout.takeAt(0)
+                    if child.widget():
+                        child.widget().deleteLater()
+
+                if not self.staged_files:
+                    self.staging_container.setVisible(False)
+                    return
+
+                self.staging_container.setVisible(True)
+                
+                for fpath in self.staged_files:
+                    fname = Path(fpath).name
+                    
+                    # Chip Widget
+                    chip = QFrame()
+                    chip.setStyleSheet("background-color: #3c3c3c; border-radius: 5px; padding: 2px;")
+                    chip_layout = QHBoxLayout(chip)
+                    chip_layout.setContentsMargins(5, 2, 5, 2)
+                    
+                    lbl = QLabel(fname)
+                    lbl.setStyleSheet("color: white;")
+                    chip_layout.addWidget(lbl)
+                    
+                    btn_del = QPushButton("x")
+                    btn_del.setFixedSize(20, 20)
+                    btn_del.setStyleSheet("background-color: #d32f2f; color: white; border: none; border-radius: 10px; font-weight: bold;")
+                    # Use default arg in lambda to capture current fpath
+                    btn_del.clicked.connect(lambda checked, p=fpath: self._remove_staged_file(p))
+                    chip_layout.addWidget(btn_del)
+                    
+                    self.staging_layout.addWidget(chip)
+                
+                # Add stretch to push chips to the left
+                self.staging_layout.addStretch()
 
             @pyqtSlot()
             def send_message(self):
                 user_text = self.input_box.toPlainText().strip()
-                if not user_text: return
+                
+                # Validate: Must have text OR files
+                if not user_text and not self.staged_files:
+                    return
+                
                 if not self.api_manager.is_configured():
                     QMessageBox.warning(self, "Error", "API Key missing.")
                     return
@@ -446,33 +538,63 @@ def main_application():
                 model_id = self.model_combo.currentData()
                 temperature = self.temp_slider.value() / 100.0
 
+                # --- Process Attachments ---
+                full_message_content = user_text
+                
+                if self.staged_files:
+                    gui_print_info(f"Processing {len(self.staged_files)} attachments...")
+                    for fpath in self.staged_files:
+                        try:
+                            raw_content = FileExtractor.extract_content(fpath)
+                            fname = Path(fpath).name
+                            
+                            # Create payload for DB/LLM (contains full content)
+                            attachment_payload = FileExtractor.create_attachment_payload(fname, raw_content)
+                            full_message_content += attachment_payload
+                            
+                        except Exception as e:
+                            gui_print_error(f"Failed to attach {fname}: {e}")
+                            QMessageBox.warning(self, "Attachment Error", f"Could not read {fname}:\n{e}")
+                            return # Stop sending if attachment fails
+
+                    # Clear staging after successful processing
+                    self.staged_files = []
+                    self._update_staging_area()
+
                 # --- New Conversation Logic ---
                 if self.current_conversation_id is None:
-                    title = user_text[:40] + "..." if len(user_text) > 40 else user_text
+                    # Use original user text for title, not the huge attachment string
+                    title_text = user_text if user_text else "File Attachment"
+                    title = title_text[:40] + "..." if len(title_text) > 40 else title_text
+                    
                     new_id = self.db_manager.add_conversation(title)
                     if new_id == -1: return
                     
                     self.current_conversation_id = new_id
                     
-                    # Add to history list
                     new_item = QListWidgetItem(title)
                     new_item.setData(Qt.ItemDataRole.UserRole, new_id)
                     self.history_list.insertItem(0, new_item)
                     self.history_list.setCurrentItem(new_item)
                     
-                    # --- System Prompt Injection ---
+                    # Inject System Prompt
                     sys_prompt_content = self.sys_prompt_combo.currentData()
                     if sys_prompt_content:
-                        gui_print_info("Injecting selected system prompt...")
                         self.db_manager.add_message(new_id, "system", sys_prompt_content, None, None)
                         self.current_messages.append({"role": "system", "content": sys_prompt_content})
-                        # Lock the selector once chat starts
                         self.sys_prompt_combo.setEnabled(False)
 
                 # --- Handle User Message ---
-                self.db_manager.add_message(self.current_conversation_id, "user", user_text, None, None)
-                self.current_messages.append({"role": "user", "content": user_text})
-                self.chat_backend.message_added.emit("user", user_text, "You")
+                # 1. Save full content (with attachments) to DB
+                self.db_manager.add_message(self.current_conversation_id, "user", full_message_content, None, None)
+                
+                # 2. Update Context (LLM needs full content)
+                self.current_messages.append({"role": "user", "content": full_message_content})
+                
+                # 3. Update UI (Strip attachments so user NEVER sees them)
+                # strip_attachments_for_ui returns safe HTML (escaped text + html tags)
+                display_content = FileExtractor.strip_attachments_for_ui(full_message_content)
+                self.chat_backend.message_added.emit("user", display_content, "You")
                 
                 self.input_box.clear()
                 self.set_ui_enabled(False)
@@ -494,7 +616,9 @@ def main_application():
                             self.model_combo.currentData(), self.temp_slider.value() / 100.0
                         )
                     
-                    self.chat_backend.message_added.emit("assistant", content, self.model_combo.currentText())
+                    # Escape assistant content because frontend uses innerHTML
+                    safe_content = html.escape(content)
+                    self.chat_backend.message_added.emit("assistant", safe_content, self.model_combo.currentText())
                 except Exception as e:
                     self.handle_api_error(f"Parse error: {e}")
                 finally:
@@ -509,6 +633,7 @@ def main_application():
             def set_ui_enabled(self, enabled):
                 self.send_button.setEnabled(enabled)
                 self.input_box.setEnabled(enabled)
+                self.attach_btn.setEnabled(enabled)
                 self.controls_dock.setEnabled(enabled)
                 self.send_button.setText("Send Message" if enabled else "Waiting...")
 
