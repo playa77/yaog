@@ -1,4 +1,4 @@
-# database_manager.py for OR-Client (yaog.py)
+# database_manager.py for YaOG (yaog.py)
 # Version: 2.2
 # Description: A dedicated module to handle all SQLite database interactions.
 #              Includes schema migration logic for v2.0+ (System Prompts).

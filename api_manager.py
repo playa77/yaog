@@ -1,4 +1,4 @@
-# api_manager.py for OR-Client (yaog.py)
+# api_manager.py for YaOG (yaog.py)
 # Version: 1.9
 # Description: A dedicated module to handle all interactions with the OpenRouter API.
 #

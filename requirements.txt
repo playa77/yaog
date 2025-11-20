@@ -1,4 +1,4 @@
-# requirements.txt for OR-Client (yaog.py)
+# requirements.txt for YaOG (yaog.py)
 
 PyQt6==6.7.0
 PyQt6-WebEngine==6.7.0

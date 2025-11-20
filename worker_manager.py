@@ -1,4 +1,4 @@
-# worker_manager.py for OR-Client (yaog.py)
+# worker_manager.py for YaOG (yaog.py)
 # Version: 1.2
 # Description: A dedicated module for managing the asynchronous API worker.
 #              Includes robust handling for HTTP 429 (Rate Limit) errors.

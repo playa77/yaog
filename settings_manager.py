@@ -1,10 +1,9 @@
-# settings_manager.py for OR-Client (yaog.py)
-# Version: 1.1
-# Description: Manages application-wide settings persistence using JSON.
-#              Part of Milestone 3, Task 3 (Settings Infrastructure).
+# settings_manager.py for YaOG (yaog.py)
+# Version: 1.2
+# Description: Manages application-wide settings and Model configurations.
 #
-# Change Log (v1.1):
-# - [Config] Updated default API timeout to 360s (Roadmap requirement).
+# Change Log (v1.2):
+# - Added ModelManager class to handle models.json CRUD.
 
 import json
 import sys
@@ -15,10 +14,10 @@ class SettingsManager:
     Handles loading and saving of user settings to a local JSON file.
     """
     DEFAULT_SETTINGS = {
-        "api_timeout": 360,   # Seconds (Default updated to 360s)
-        "font_size": 16,      # Pixels
-        "model_id": "mistralai/mistral-7b-instruct:free", # Default model
-        "system_prompt_id": None # Default system prompt ID
+        "api_timeout": 360,
+        "font_size": 16,
+        "model_id": "mistralai/mistral-7b-instruct:free",
+        "system_prompt_id": None
     }
 
     def __init__(self, filename="settings.json"):
@@ -27,43 +26,84 @@ class SettingsManager:
         self.load()
 
     def load(self):
-        """
-        Loads settings from the JSON file. If the file doesn't exist or is invalid,
-        it falls back to default values.
-        """
         if not self.filepath.exists():
-            print(f"[INFO] Settings file '{self.filepath}' not found. Using defaults.")
             return
-
         try:
             with open(self.filepath, "r") as f:
                 data = json.load(f)
-                # Update defaults with loaded data (preserves new keys if defaults change in future)
                 self.settings.update(data)
-            print(f"[INFO] Settings loaded from {self.filepath}")
         except (json.JSONDecodeError, IOError) as e:
-            print(f"\033[93m[WARNING] Failed to load settings: {e}. Using defaults.\033[0m", file=sys.stderr)
+            print(f"[WARNING] Failed to load settings: {e}", file=sys.stderr)
 
     def save(self):
-        """
-        Saves the current settings to the JSON file.
-        """
         try:
             with open(self.filepath, "w") as f:
                 json.dump(self.settings, f, indent=4)
-            print(f"[INFO] Settings saved to {self.filepath}")
         except IOError as e:
-            print(f"\033[91m[ERROR] Failed to save settings: {e}\033[0m", file=sys.stderr)
+            print(f"[ERROR] Failed to save settings: {e}", file=sys.stderr)
 
     def get(self, key):
-        """
-        Retrieves a setting value.
-        """
         return self.settings.get(key, self.DEFAULT_SETTINGS.get(key))
 
     def set(self, key, value):
-        """
-        Updates a setting value and saves the file.
-        """
         self.settings[key] = value
         self.save()
+
+
+class ModelManager:
+    """
+    Handles loading and saving of model definitions to models.json.
+    """
+    def __init__(self, filename="models.json"):
+        self.filepath = Path(filename)
+        self.models = []
+        self.load()
+
+    def load(self):
+        if not self.filepath.exists():
+            # Defaults are handled by utils.setup_project_files, but just in case:
+            self.models = []
+            return
+        try:
+            with open(self.filepath, "r") as f:
+                data = json.load(f)
+                self.models = data.get("models", [])
+        except (json.JSONDecodeError, IOError) as e:
+            print(f"[ERROR] Failed to load models.json: {e}", file=sys.stderr)
+            self.models = []
+
+    def save(self):
+        data = {"models": self.models}
+        try:
+            with open(self.filepath, "w") as f:
+                json.dump(data, f, indent=2)
+            print("[INFO] models.json updated.")
+        except IOError as e:
+            print(f"[ERROR] Failed to save models.json: {e}", file=sys.stderr)
+
+    def get_all(self):
+        return self.models
+
+    def add_model(self, name, model_id):
+        # Check for duplicates
+        for m in self.models:
+            if m['id'] == model_id:
+                return False
+        
+        self.models.append({"name": name, "id": model_id})
+        self.save()
+        return True
+
+    def update_model(self, index, name, model_id):
+        if 0 <= index < len(self.models):
+            self.models[index] = {"name": name, "id": model_id}
+            self.save()
+            return True
+        return False
+
+    def delete_model(self, index):
+        if 0 <= index < len(self.models):
+            self.models.pop(index)
+            self.save()
+            return True
+        return False
