@@ -1,7 +1,10 @@
 # worker_manager.py for OR-Client (yaog.py)
-# Version: 1.1
+# Version: 1.2
 # Description: A dedicated module for managing the asynchronous API worker.
 #              Includes robust handling for HTTP 429 (Rate Limit) errors.
+#
+# Change Log (v1.2):
+# - [UX] Added 'first_token' signal to support "Thinking..." -> "Generating..." UI feedback.
 
 import json
 import sys
@@ -25,9 +28,11 @@ class WorkerSignals(QObject):
     Supported signals are:
     - finished: Emits a dict when the process is complete.
     - error: Emits a string if an error occurs.
+    - first_token: Emits when the first valid data chunk is received.
     """
     finished = pyqtSignal(dict)
     error = pyqtSignal(str)
+    first_token = pyqtSignal()
 
 
 class ApiWorker(QRunnable):
@@ -61,6 +66,8 @@ class ApiWorker(QRunnable):
         """
         try:
             content_parts = []
+            first_token_emitted = False
+            
             # Using standard print, which will be redirected by the main app's LogStream
             print("[WORKER] Worker started, consuming response stream line-by-line...")
 
@@ -81,6 +88,11 @@ class ApiWorker(QRunnable):
                         content_part = delta.get('content')
 
                         if content_part:
+                            # Emit signal on the very first token received
+                            if not first_token_emitted:
+                                self.signals.first_token.emit()
+                                first_token_emitted = True
+                            
                             content_parts.append(content_part)
 
                     except json.JSONDecodeError:

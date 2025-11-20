@@ -1,14 +1,14 @@
 # YaOG -- Yet another Openrouter GUI
-# Version: 2.5.1
-# Description: Instructive Roadmap - M3, T1 (Visual & Layout Overhaul) + Fixes
+# Version: 2.6
+# Description: Instructive Roadmap - M3, T2 (Enhanced Feedback & Input)
+#
+# Change Log (v2.6):
+# - [UX] Implemented "Thinking..." -> "Generating..." indicator using new Worker signals.
+# - [UX] Implemented Multi-File Upload (QFileDialog.getOpenFileNames).
+# - [UX] Implemented FlowLayout for the attachment staging area to prevent window widening.
 #
 # Change Log (v2.5.1):
-# - [FIX] Fixed Input Area resizing. The Input Box and Attach Button now properly expand
-#         vertically when the splitter is dragged, instead of staying fixed size.
-#
-# Change Log (v2.5):
-# - [UX] Implemented High Contrast Styling (White/Black).
-# - [UX] Implemented Resizable Input Area (QSplitter).
+# - [FIX] Fixed Input Area resizing.
 
 import os
 import sys
@@ -47,10 +47,11 @@ def main_application():
             QApplication, QMainWindow, QDockWidget, QTextEdit, QListWidget,
             QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QComboBox,
             QSlider, QMessageBox, QListWidgetItem, QDialog, QLineEdit, QSplitter,
-            QGroupBox, QFileDialog, QFrame, QSizePolicy, QCheckBox, QMenu, QInputDialog
+            QGroupBox, QFileDialog, QFrame, QSizePolicy, QCheckBox, QMenu, QInputDialog,
+            QLayout
         )
         from PyQt6.QtCore import (
-            Qt, QThreadPool, QObject, pyqtSignal, pyqtSlot, QUrl, QTimer, QSize
+            Qt, QThreadPool, QObject, pyqtSignal, pyqtSlot, QUrl, QTimer, QSize, QPoint, QRect
         )
         from PyQt6.QtGui import QIcon, QAction
         from PyQt6.QtWebEngineWidgets import QWebEngineView
@@ -89,6 +90,91 @@ def main_application():
 
         gui_print_info("Loading environment variables from .env file...")
         load_dotenv()
+
+        # --- Custom Flow Layout ---
+        class FlowLayout(QLayout):
+            """
+            Standard FlowLayout implementation for PyQt6.
+            Arranges widgets left-to-right, wrapping to the next line when space runs out.
+            """
+            def __init__(self, parent=None, margin=0, spacing=-1):
+                super().__init__(parent)
+                if parent is not None:
+                    self.setContentsMargins(margin, margin, margin, margin)
+                self.setSpacing(spacing)
+                self.itemList = []
+
+            def __del__(self):
+                item = self.takeAt(0)
+                while item:
+                    item = self.takeAt(0)
+
+            def addItem(self, item):
+                self.itemList.append(item)
+
+            def count(self):
+                return len(self.itemList)
+
+            def itemAt(self, index):
+                if 0 <= index < len(self.itemList):
+                    return self.itemList[index]
+                return None
+
+            def takeAt(self, index):
+                if 0 <= index < len(self.itemList):
+                    return self.itemList.pop(index)
+                return None
+
+            def expandingDirections(self):
+                return Qt.Orientation(0)
+
+            def hasHeightForWidth(self):
+                return True
+
+            def heightForWidth(self, width):
+                height = self._do_layout(QRect(0, 0, width, 0), True)
+                return height
+
+            def setGeometry(self, rect):
+                super().setGeometry(rect)
+                self._do_layout(rect, False)
+
+            def sizeHint(self):
+                return self.minimumSize()
+
+            def minimumSize(self):
+                size = QSize()
+                for item in self.itemList:
+                    size = size.expandedTo(item.minimumSize())
+                margin, _, _, _ = self.getContentsMargins()
+                size += QSize(2 * margin, 2 * margin)
+                return size
+
+            def _do_layout(self, rect, test_only):
+                x = rect.x()
+                y = rect.y()
+                line_height = 0
+                spacing = self.spacing()
+
+                for item in self.itemList:
+                    wid = item.widget()
+                    space_x = spacing + wid.style().layoutSpacing(QSizePolicy.ControlType.PushButton, QSizePolicy.ControlType.PushButton, Qt.Orientation.Horizontal)
+                    space_y = spacing + wid.style().layoutSpacing(QSizePolicy.ControlType.PushButton, QSizePolicy.ControlType.PushButton, Qt.Orientation.Vertical)
+                    
+                    next_x = x + item.sizeHint().width() + space_x
+                    if next_x - space_x > rect.right() and line_height > 0:
+                        x = rect.x()
+                        y = y + line_height + space_y
+                        next_x = x + item.sizeHint().width() + space_x
+                        line_height = 0
+
+                    if not test_only:
+                        item.setGeometry(QRect(QPoint(x, y), item.sizeHint()))
+
+                    x = next_x
+                    line_height = max(line_height, item.sizeHint().height())
+
+                return y + line_height - rect.y()
 
         class ChatBackend(QObject):
             # Updated signal signature to include index
@@ -218,7 +304,7 @@ def main_application():
         class MainWindow(QMainWindow):
             def __init__(self, log_signal):
                 super().__init__()
-                self.setWindowTitle("OR-Client (v2.5.1) - Visual & Layout Overhaul")
+                self.setWindowTitle("OR-Client (v2.6) - Enhanced Feedback & Input")
                 self.setGeometry(100, 100, 1400, 900)
                 
                 # Initialize state variables
@@ -393,11 +479,11 @@ def main_application():
                 input_layout = QVBoxLayout(input_container)
                 input_layout.setContentsMargins(0, 5, 0, 0) # Small top margin for separation
                 
-                # Staging Area
+                # Staging Area (Using FlowLayout)
                 self.staging_container = QWidget()
-                self.staging_layout = QHBoxLayout(self.staging_container)
+                # [UX] Use FlowLayout to wrap attachments instead of widening window
+                self.staging_layout = FlowLayout(self.staging_container) 
                 self.staging_layout.setContentsMargins(0, 0, 0, 0)
-                self.staging_layout.setAlignment(Qt.AlignmentFlag.AlignLeft)
                 self.staging_container.setVisible(False)
                 input_layout.addWidget(self.staging_container)
 
@@ -410,13 +496,13 @@ def main_application():
                 self.input_box.setStyleSheet("background-color: #ffffff; color: #000000; border: 1px solid #ccc;")
                 
                 # [FIX] Remove fixed height, set minimum height instead.
-                # This allows the box to grow when the splitter is moved.
                 self.input_box.setMinimumHeight(60) 
                 
                 input_row.addWidget(self.input_box)
                 
                 self.attach_btn = QPushButton("Attach")
-                self.attach_btn.setToolTip("Attach File (PDF, Text, Code)")
+                self.attach_btn.setToolTip("Attach File(s)")
+                self.attach_btn.clicked.connect(self._attach_file)
                 
                 # [FIX] Allow the attach button to expand vertically with the text box
                 self.attach_btn.setFixedWidth(60)
@@ -672,15 +758,21 @@ def main_application():
             @pyqtSlot()
             def _attach_file(self):
                 filter_str = FileExtractor.get_supported_extensions()
-                file_path, _ = QFileDialog.getOpenFileName(self, "Attach File", "", filter_str)
+                # [UX] Use getOpenFileNames for multi-selection
+                files, _ = QFileDialog.getOpenFileNames(self, "Attach File(s)", "", filter_str)
                 
-                if file_path:
-                    if file_path not in self.staged_files:
-                        self.staged_files.append(file_path)
+                if files:
+                    count = 0
+                    for file_path in files:
+                        if file_path not in self.staged_files:
+                            self.staged_files.append(file_path)
+                            count += 1
+                    
+                    if count > 0:
                         self._update_staging_area()
-                        gui_print_info(f"Staged file: {Path(file_path).name}")
+                        gui_print_info(f"Staged {count} file(s).")
                     else:
-                        gui_print_warning("File already attached.")
+                        gui_print_warning("Selected file(s) already attached.")
 
             def _remove_staged_file(self, path_to_remove):
                 if path_to_remove in self.staged_files:
@@ -688,6 +780,7 @@ def main_application():
                     self._update_staging_area()
 
             def _update_staging_area(self):
+                # Clear existing items from FlowLayout
                 while self.staging_layout.count():
                     child = self.staging_layout.takeAt(0)
                     if child.widget():
@@ -717,7 +810,8 @@ def main_application():
                     chip_layout.addWidget(btn_del)
                     
                     self.staging_layout.addWidget(chip)
-                self.staging_layout.addStretch()
+                
+                # FlowLayout doesn't need addStretch()
 
             @pyqtSlot()
             def send_message(self):
@@ -734,19 +828,14 @@ def main_application():
                 temperature = self.temp_slider.value() / 100.0
 
                 # --- SYSTEM PROMPT SYNC ---
-                # Ensure the context matches the dropdown selection before generating
                 selected_prompt = self.sys_prompt_combo.currentData()
                 
-                # 1. Check if we already have a system prompt in memory
                 if self.current_messages and self.current_messages[0]['role'] == 'system':
                     if selected_prompt:
-                        # Update existing
                         self.current_messages[0]['content'] = selected_prompt
                     else:
-                        # Remove existing (User selected None)
                         self.current_messages.pop(0)
                 elif selected_prompt:
-                    # 2. No system prompt exists, but one is selected -> Insert it
                     self.current_messages.insert(0, {
                         "role": "system", 
                         "content": selected_prompt, 
@@ -788,25 +877,21 @@ def main_application():
                     self.history_list.insertItem(0, new_item)
                     self.history_list.setCurrentItem(new_item)
                     
-                    # Note: System prompt is already handled by the Sync block above for the API context.
-                    # But we should save it to DB for persistence if it exists.
                     if self.current_messages and self.current_messages[0]['role'] == 'system':
                         self.db_manager.add_message(new_id, "system", self.current_messages[0]['content'], None, None)
 
                 # --- Handle User Message ---
                 self.db_manager.add_message(self.current_conversation_id, "user", full_message_content, None, None)
                 
-                # Update Context
                 self.current_messages.append({
                     "role": "user", 
                     "content": full_message_content,
                     "model_name": "You"
                 })
                 
-                # Update UI (Append just this message to avoid full refresh flicker)
+                # Update UI
                 new_msg_index = len(self.current_messages) - 1
                 
-                # Render logic for this single message
                 clean_text, attachments = FileExtractor.strip_attachments_for_ui(full_message_content)
                 if self.chk_markdown.isChecked():
                     html_text = markdown.markdown(clean_text, extensions=['fenced_code', 'tables'])
@@ -823,14 +908,27 @@ def main_application():
                 self.set_ui_enabled(False)
                 self._update_token_count()
 
+                # [UX] Show "Thinking..." indicator immediately
+                self.chat_view.page().runJavaScript("showThinking();")
+
                 worker = ApiWorker(self.api_manager, model_id, self.current_messages, temperature)
                 worker.signals.finished.connect(self.handle_api_response)
                 worker.signals.error.connect(self.handle_api_error)
+                # [UX] Connect first_token signal to update status
+                worker.signals.first_token.connect(self.handle_first_token)
                 self.threadpool.start(worker)
+
+            @pyqtSlot()
+            def handle_first_token(self):
+                """Called when the first token is received from the API."""
+                self.chat_view.page().runJavaScript("updateThinking('Generating Response...');")
 
             @pyqtSlot(dict)
             def handle_api_response(self, response):
                 try:
+                    # [UX] Remove Thinking indicator (it will be replaced by the message)
+                    self.chat_view.page().runJavaScript("removeThinking();")
+
                     content = response['choices'][0]['message']['content']
                     model_name = self.model_combo.currentText()
                     
@@ -862,6 +960,8 @@ def main_application():
 
             @pyqtSlot(str)
             def handle_api_error(self, msg):
+                # [UX] Ensure thinking indicator is gone on error
+                self.chat_view.page().runJavaScript("removeThinking();")
                 gui_print_error(msg)
                 self.set_ui_enabled(True)
                 QMessageBox.critical(self, "API Error", msg)

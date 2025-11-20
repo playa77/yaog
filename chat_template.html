@@ -1,10 +1,10 @@
 <!-- chat_template.html for OR-Client (yaog.py) -->
-<!-- Version: 2.3 -->
+<!-- Version: 2.4 -->
 <!-- Description: The frontend view for the chat interface. -->
+<!-- Change Log (v2.4): -->
+<!-- - [UX] Added "Thinking..." indicator logic and styling (pulsing animation). -->
 <!-- Change Log (v2.3): -->
 <!-- - [UX] High Contrast Overhaul: Switched to White Background / Black Text. -->
-<!-- - [UX] Updated message bubble colors for light mode (User: Light Blue, Assistant: Light Grey). -->
-<!-- - [UX] Retained dark styling for code blocks for contrast. -->
 
 <!DOCTYPE html>
 <html>
@@ -50,6 +50,22 @@
             border-left: 4px solid #9e9e9e;
             align-self: flex-start;
             color: #000000;
+        }
+
+        /* Thinking Indicator Styling */
+        .thinking {
+            background-color: #f0f0f0;
+            border-left: 4px solid #ccc;
+            align-self: flex-start;
+            color: #666;
+            font-style: italic;
+            animation: pulse 1.5s infinite ease-in-out;
+        }
+
+        @keyframes pulse {
+            0% { opacity: 0.6; }
+            50% { opacity: 1.0; }
+            100% { opacity: 0.6; }
         }
 
         .message-header {
@@ -104,7 +120,6 @@
         }
 
         /* Markdown specific styling */
-        /* We keep code blocks dark for better syntax highlighting contrast */
         .content-body code {
             background-color: #eee;
             color: #d63384; /* Pink/Red for inline code */
@@ -148,6 +163,9 @@
         });
 
         function appendMessage(index, role, content, modelName) {
+            // Ensure thinking indicator is removed if it exists
+            removeThinking();
+
             const chatContainer = document.getElementById('chat-container');
 
             const messageDiv = document.createElement('div');
@@ -183,6 +201,35 @@
             messageDiv.appendChild(contentDiv);
             chatContainer.appendChild(messageDiv);
             window.scrollTo(0, document.body.scrollHeight);
+        }
+
+        // --- Thinking Indicator Logic ---
+
+        function showThinking() {
+            removeThinking(); // Prevent duplicates
+            const chatContainer = document.getElementById('chat-container');
+            
+            const thinkingDiv = document.createElement('div');
+            thinkingDiv.id = 'thinking-indicator';
+            thinkingDiv.classList.add('message', 'thinking');
+            thinkingDiv.textContent = "Thinking...";
+            
+            chatContainer.appendChild(thinkingDiv);
+            window.scrollTo(0, document.body.scrollHeight);
+        }
+
+        function updateThinking(text) {
+            const thinkingDiv = document.getElementById('thinking-indicator');
+            if (thinkingDiv) {
+                thinkingDiv.textContent = text;
+            }
+        }
+
+        function removeThinking() {
+            const thinkingDiv = document.getElementById('thinking-indicator');
+            if (thinkingDiv) {
+                thinkingDiv.remove();
+            }
         }
     </script>
 
