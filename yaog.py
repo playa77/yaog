@@ -1,18 +1,14 @@
 # YaOG -- Yet another Openrouter GUI
-# Version: 3.1
+# Version: 3.2
 # Description: Instructive Roadmap - M3/M4 (Settings, Data Management, Models)
+#
+# Change Log (v3.2):
+# - [Build] Implemented resource_path() for single-file executable bundling.
 #
 # Change Log (v3.1):
 # - [Branding] Corrected application name to "YaOG".
 # - [UX] Moved "Import Chat" to the History List context menu.
 # - [UX] Context menu now functions on empty space (for Import) and items (for Edit/Export).
-#
-# Change Log (v3.0):
-# - [Feature] Added Tabbed Settings Dialog (General, API, Models, Data).
-# - [Feature] Added Model Management (Add/Edit/Delete).
-# - [Feature] Added API Key Management (Update .env).
-# - [Feature] Added Chat Export/Import (JSON).
-# - [Feature] Added System Prompt Export/Import.
 
 import os
 import sys
@@ -28,7 +24,7 @@ from datetime import datetime
 from api_manager import ApiManager
 from database_manager import DatabaseManager
 from settings_manager import SettingsManager, ModelManager
-from utils import crash_handler, setup_project_files, LogStream, FileExtractor, TokenCounter, EnvManager
+from utils import crash_handler, setup_project_files, LogStream, FileExtractor, TokenCounter, EnvManager, resource_path
 from worker_manager import ApiWorker
 
 # Register the global exception handler.
@@ -464,7 +460,7 @@ def main_application():
         class MainWindow(QMainWindow):
             def __init__(self, log_signal):
                 super().__init__()
-                self.setWindowTitle("YaOG (v3.1)")
+                self.setWindowTitle("YaOG (v3.2)")
                 self.setGeometry(100, 100, 1400, 900)
                 
                 self.current_messages = []
@@ -664,7 +660,9 @@ def main_application():
                 self.channel = QWebChannel()
                 self.channel.registerObject("backend", self.chat_backend)
                 self.chat_view.page().setWebChannel(self.channel)
-                html_path = os.path.abspath("chat_template.html")
+                
+                # Use resource_path to find the HTML file even if bundled
+                html_path = resource_path("chat_template.html")
                 self.chat_view.setUrl(QUrl.fromLocalFile(html_path))
 
             def _populate_models(self):

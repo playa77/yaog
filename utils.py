@@ -1,11 +1,12 @@
 # utils.py for YaOG (yaog.py)
-# Version: 1.5
+# Version: 1.6
 # Description: General-purpose utility functions and classes.
 #              Includes crash handling, file setup, stdout redirection,
 #              file content extraction, token counting, and Env management.
 #
-# Change Log (v1.5):
-# - Added EnvManager class for reading/writing .env files.
+# Change Log (v1.6):
+# - [Build] Added resource_path() to support PyInstaller bundling.
+# - [Build] setup_project_files() now skips HTML check if frozen.
 
 import sys
 import json
@@ -46,6 +47,20 @@ def crash_handler(exctype, value, tb):
     sys.exit(1)
 
 
+def resource_path(relative_path):
+    """ 
+    Get absolute path to resource, works for dev and for PyInstaller.
+    PyInstaller unpacks data into a temp folder at sys._MEIPASS.
+    """
+    try:
+        # PyInstaller creates a temp folder and stores path in _MEIPASS
+        base_path = sys._MEIPASS
+    except Exception:
+        base_path = os.path.abspath(".")
+
+    return os.path.join(base_path, relative_path)
+
+
 def setup_project_files():
     """
     Checks for essential configuration files and creates placeholders if missing.
@@ -78,9 +93,10 @@ def setup_project_files():
             print(f"\033[91m[ERROR] Could not create models.json: {e}\033[0m")
 
     # chat_template.html
-    if not Path("chat_template.html").exists():
+    # If frozen (bundled), the HTML is inside the executable, so we don't check disk.
+    is_frozen = getattr(sys, 'frozen', False)
+    if not is_frozen and not Path("chat_template.html").exists():
         print("\033[91m[FATAL] 'chat_template.html' is missing.\033[0m")
-        # In a real scenario, we might write a default string here, but for now we exit.
         sys.exit(1)
     
     print("[INFO] Project file verification complete.")
@@ -93,9 +109,6 @@ class EnvManager:
     @staticmethod
     def get_api_key():
         """Reads the API key from environment or file."""
-        # We prefer reading from the file directly to ensure we get the latest
-        # value if it was changed during the session, though os.environ is usually used.
-        # For this app, we will read the file to populate the Settings dialog.
         key = "YOUR_API_KEY_HERE"
         if Path(".env").exists():
             try:
@@ -105,7 +118,6 @@ class EnvManager:
                             parts = line.strip().split("=", 1)
                             if len(parts) == 2:
                                 raw_val = parts[1].strip()
-                                # Remove quotes if present
                                 if (raw_val.startswith('"') and raw_val.endswith('"')) or \
                                    (raw_val.startswith("'") and raw_val.endswith("'")):
                                     key = raw_val[1:-1]
@@ -138,7 +150,6 @@ class EnvManager:
         try:
             with open(".env", "w") as f:
                 f.writelines(new_lines)
-            # Also update current process env
             os.environ["OPENROUTER_API_KEY"] = new_key
             return True
         except IOError as e:
