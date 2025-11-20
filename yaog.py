@@ -1,13 +1,14 @@
 # YaOG -- Yet another Openrouter GUI
-# Version: 2.4.3
-# Description: Instructive Roadmap - M2, T3 (Core UX Enhancements) + UI Lock
+# Version: 2.5.1
+# Description: Instructive Roadmap - M3, T1 (Visual & Layout Overhaul) + Fixes
 #
-# Change Log (v2.4.3):
-# - [UX] Removed Dock Widget Title Bars (headers) completely.
-# - [UX] Locked Dock Widgets (disabled closing and floating).
+# Change Log (v2.5.1):
+# - [FIX] Fixed Input Area resizing. The Input Box and Attach Button now properly expand
+#         vertically when the splitter is dragged, instead of staying fixed size.
 #
-# Change Log (v2.4.2):
-# - [FIX] Added explicit headers inside the Left Dock for layout clarity.
+# Change Log (v2.5):
+# - [UX] Implemented High Contrast Styling (White/Black).
+# - [UX] Implemented Resizable Input Area (QSplitter).
 
 import os
 import sys
@@ -217,7 +218,7 @@ def main_application():
         class MainWindow(QMainWindow):
             def __init__(self, log_signal):
                 super().__init__()
-                self.setWindowTitle("OR-Client (v2.4.3) - UX Enhancements")
+                self.setWindowTitle("OR-Client (v2.5.1) - Visual & Layout Overhaul")
                 self.setGeometry(100, 100, 1400, 900)
                 
                 # Initialize state variables
@@ -295,7 +296,8 @@ def main_application():
 
                 self.log_output = QTextEdit()
                 self.log_output.setReadOnly(True)
-                self.log_output.setStyleSheet("background-color: #2b2b2b; color: #f0f0f0; font-family: monospace;")
+                # [UX] High Contrast: White background, Black text
+                self.log_output.setStyleSheet("background-color: #ffffff; color: #000000; font-family: monospace; border: 1px solid #ccc;")
                 left_layout.addWidget(self.log_output, 1)
                 
                 self.left_dock.setWidget(left_widget)
@@ -378,40 +380,65 @@ def main_application():
                 central_widget = QWidget()
                 layout = QVBoxLayout(central_widget)
                 
-                # 1. Chat View
+                # [UX] Resizable Layout: Use QSplitter
+                splitter = QSplitter(Qt.Orientation.Vertical)
+                
+                # 1. Top Pane: Chat View
                 self.chat_view = QWebEngineView()
                 self._setup_web_channel()
-                layout.addWidget(self.chat_view, 1)
+                splitter.addWidget(self.chat_view)
                 
-                # 2. Staging Area
+                # 2. Bottom Pane: Input Container
+                input_container = QWidget()
+                input_layout = QVBoxLayout(input_container)
+                input_layout.setContentsMargins(0, 5, 0, 0) # Small top margin for separation
+                
+                # Staging Area
                 self.staging_container = QWidget()
                 self.staging_layout = QHBoxLayout(self.staging_container)
                 self.staging_layout.setContentsMargins(0, 0, 0, 0)
                 self.staging_layout.setAlignment(Qt.AlignmentFlag.AlignLeft)
                 self.staging_container.setVisible(False)
-                layout.addWidget(self.staging_container)
+                input_layout.addWidget(self.staging_container)
 
-                # 3. Input Area
-                input_layout = QHBoxLayout()
+                # Input Row (Text + Attach)
+                input_row = QHBoxLayout()
                 
                 self.input_box = QTextEdit()
                 self.input_box.setPlaceholderText("Enter your message here...")
-                self.input_box.setFixedHeight(100)
-                input_layout.addWidget(self.input_box)
+                # [UX] High Contrast: White background, Black text
+                self.input_box.setStyleSheet("background-color: #ffffff; color: #000000; border: 1px solid #ccc;")
+                
+                # [FIX] Remove fixed height, set minimum height instead.
+                # This allows the box to grow when the splitter is moved.
+                self.input_box.setMinimumHeight(60) 
+                
+                input_row.addWidget(self.input_box)
                 
                 self.attach_btn = QPushButton("Attach")
                 self.attach_btn.setToolTip("Attach File (PDF, Text, Code)")
-                self.attach_btn.setFixedSize(60, 100)
-                self.attach_btn.clicked.connect(self._attach_file)
-                input_layout.addWidget(self.attach_btn)
                 
-                layout.addLayout(input_layout)
+                # [FIX] Allow the attach button to expand vertically with the text box
+                self.attach_btn.setFixedWidth(60)
+                self.attach_btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Expanding)
+                
+                input_row.addWidget(self.attach_btn)
+                
+                # [FIX] Add stretch factor 1 to the input row so it claims the vertical space
+                input_layout.addLayout(input_row, 1)
 
-                # 4. Send Button
+                # Send Button
                 self.send_button = QPushButton("Send Message")
                 self.send_button.clicked.connect(self.send_message)
-                layout.addWidget(self.send_button)
+                input_layout.addWidget(self.send_button)
                 
+                splitter.addWidget(input_container)
+                
+                # Set initial sizes (Chat gets priority)
+                splitter.setStretchFactor(0, 4)
+                splitter.setStretchFactor(1, 1)
+                
+                layout.addWidget(splitter)
                 self.setCentralWidget(central_widget)
 
             def _setup_web_channel(self):

@@ -25,6 +25,10 @@
       "id": "google/gemini-2.0-flash-lite-001"
     },
     {
+      "name": "Grok 4.1 Fast (free until dec 3rd)",
+      "id": "x-ai/grok-4.1-fast"
+    },
+    {
       "name": "Qwen3 (free)",
       "id": "qwen/qwen3-235b-a22b:free"
     },
