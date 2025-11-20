@@ -1,0 +1,6 @@
+{
+    "api_timeout": 360,
+    "font_size": 15,
+    "model_id": "mistralai/mistral-7b-instruct:free",
+    "system_prompt_id": null
+}

@@ -1,10 +1,10 @@
 <!-- chat_template.html for OR-Client (yaog.py) -->
-<!-- Version: 2.4 -->
+<!-- Version: 2.5 -->
 <!-- Description: The frontend view for the chat interface. -->
+<!-- Change Log (v2.5): -->
+<!-- - [Settings] Added setFontSize() JS function for dynamic font scaling. -->
 <!-- Change Log (v2.4): -->
 <!-- - [UX] Added "Thinking..." indicator logic and styling (pulsing animation). -->
-<!-- Change Log (v2.3): -->
-<!-- - [UX] High Contrast Overhaul: Switched to White Background / Black Text. -->
 
 <!DOCTYPE html>
 <html>
@@ -17,7 +17,7 @@
             background-color: #ffffff; /* White background for High Contrast */
             color: #000000;            /* Black text */
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-            font-size: 16px;
+            font-size: 16px; /* Default, can be overridden by JS */
             margin: 0;
             padding: 15px;
         }
@@ -153,6 +153,11 @@
         function clearChat() {
             const chatContainer = document.getElementById('chat-container');
             chatContainer.innerHTML = '';
+        }
+
+        // --- Settings: Font Size Control ---
+        function setFontSize(sizePx) {
+            document.body.style.fontSize = sizePx;
         }
 
         document.addEventListener("DOMContentLoaded", function() {

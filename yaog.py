@@ -1,14 +1,15 @@
 # YaOG -- Yet another Openrouter GUI
-# Version: 2.6
-# Description: Instructive Roadmap - M3, T2 (Enhanced Feedback & Input)
+# Version: 2.9
+# Description: Instructive Roadmap - M3, T3 (Settings Infrastructure)
 #
-# Change Log (v2.6):
-# - [UX] Implemented "Thinking..." -> "Generating..." indicator using new Worker signals.
-# - [UX] Implemented Multi-File Upload (QFileDialog.getOpenFileNames).
-# - [UX] Implemented FlowLayout for the attachment staging area to prevent window widening.
+# Change Log (v2.9):
+# - [Fix] Resolved race condition where 'setFontSize' was called before WebEngine load finished.
+# - [Fix] Added 'is_web_ready' state tracking to MainWindow.
 #
-# Change Log (v2.5.1):
-# - [FIX] Fixed Input Area resizing.
+# Change Log (v2.8):
+# - [UX] Moved "New Chat" button above "Saved Conversations" label.
+# - [Settings] Font size setting now applies to History List (Saved Conversations).
+# - [Config] Default timeout set to 360s.
 
 import os
 import sys
@@ -22,6 +23,7 @@ from pathlib import Path
 # --- Local Imports ---
 from api_manager import ApiManager
 from database_manager import DatabaseManager
+from settings_manager import SettingsManager
 from utils import crash_handler, setup_project_files, LogStream, FileExtractor, TokenCounter
 from worker_manager import ApiWorker
 
@@ -48,12 +50,12 @@ def main_application():
             QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QComboBox,
             QSlider, QMessageBox, QListWidgetItem, QDialog, QLineEdit, QSplitter,
             QGroupBox, QFileDialog, QFrame, QSizePolicy, QCheckBox, QMenu, QInputDialog,
-            QLayout
+            QLayout, QFormLayout, QSpinBox
         )
         from PyQt6.QtCore import (
             Qt, QThreadPool, QObject, pyqtSignal, pyqtSlot, QUrl, QTimer, QSize, QPoint, QRect
         )
-        from PyQt6.QtGui import QIcon, QAction
+        from PyQt6.QtGui import QIcon, QAction, QFont
         from PyQt6.QtWebEngineWidgets import QWebEngineView
         from PyQt6.QtWebEngineCore import QWebEngineProfile
         from PyQt6.QtWebChannel import QWebChannel
@@ -95,7 +97,6 @@ def main_application():
         class FlowLayout(QLayout):
             """
             Standard FlowLayout implementation for PyQt6.
-            Arranges widgets left-to-right, wrapping to the next line when space runs out.
             """
             def __init__(self, parent=None, margin=0, spacing=-1):
                 super().__init__(parent)
@@ -177,7 +178,6 @@ def main_application():
                 return y + line_height - rect.y()
 
         class ChatBackend(QObject):
-            # Updated signal signature to include index
             message_added = pyqtSignal(int, str, str, str, name='message_added')
             
             def __init__(self, main_window):
@@ -186,8 +186,56 @@ def main_application():
 
             @pyqtSlot(int)
             def copy_message(self, index):
-                """Copies the text of a specific message to clipboard, stripping hidden files."""
                 self.main_window.copy_message_to_clipboard(index)
+
+        # --- Settings Dialog ---
+        class SettingsDialog(QDialog):
+            """Dialog for managing application settings."""
+            def __init__(self, settings_manager, parent=None):
+                super().__init__(parent)
+                self.setWindowTitle("Settings")
+                self.setFixedSize(400, 250)
+                self.settings_manager = settings_manager
+                self._init_ui()
+
+            def _init_ui(self):
+                layout = QVBoxLayout(self)
+                form_layout = QFormLayout()
+
+                # API Timeout
+                self.timeout_spin = QSpinBox()
+                self.timeout_spin.setRange(10, 600)
+                self.timeout_spin.setSuffix(" s")
+                self.timeout_spin.setValue(self.settings_manager.get("api_timeout"))
+                self.timeout_spin.setToolTip("Maximum time to wait for an API response.")
+                form_layout.addRow("API Request Timeout:", self.timeout_spin)
+
+                # Font Size
+                self.font_spin = QSpinBox()
+                self.font_spin.setRange(8, 32)
+                self.font_spin.setSuffix(" px")
+                self.font_spin.setValue(self.settings_manager.get("font_size"))
+                self.font_spin.setToolTip("Global font size for Chat and Input.")
+                form_layout.addRow("Font Size:", self.font_spin)
+
+                layout.addLayout(form_layout)
+                layout.addStretch()
+
+                # Buttons
+                btn_layout = QHBoxLayout()
+                self.btn_save = QPushButton("Save & Apply")
+                self.btn_save.clicked.connect(self._save_settings)
+                self.btn_cancel = QPushButton("Cancel")
+                self.btn_cancel.clicked.connect(self.reject)
+                
+                btn_layout.addWidget(self.btn_save)
+                btn_layout.addWidget(self.btn_cancel)
+                layout.addLayout(btn_layout)
+
+            def _save_settings(self):
+                self.settings_manager.set("api_timeout", self.timeout_spin.value())
+                self.settings_manager.set("font_size", self.font_spin.value())
+                self.accept()
 
         # --- System Prompt Dialog ---
         class SystemPromptDialog(QDialog):
@@ -304,38 +352,50 @@ def main_application():
         class MainWindow(QMainWindow):
             def __init__(self, log_signal):
                 super().__init__()
-                self.setWindowTitle("OR-Client (v2.6) - Enhanced Feedback & Input")
+                self.setWindowTitle("OR-Client (v2.9) - Settings & Config")
                 self.setGeometry(100, 100, 1400, 900)
                 
                 # Initialize state variables
                 self.models = []
-                self.current_messages = [] # List of dicts: {role, content, model_name}
+                self.current_messages = []
                 self.current_conversation_id = None
                 self.staged_files = [] 
                 
-                # 1. Setup UI first
-                self._create_docks()
-                self._setup_central_widget()
+                # [Fix] Track if web page is loaded to prevent JS errors
+                self.is_web_ready = False
                 
-                # 2. Connect log signal
-                log_signal.connect(self._append_log)
+                # 1. Initialize Managers
+                self.settings_manager = SettingsManager()
                 
-                # 3. Initialize Managers
-                self.api_manager = ApiManager()
+                # Pass configured timeout to ApiManager
+                timeout = self.settings_manager.get("api_timeout")
+                self.api_manager = ApiManager(timeout=timeout)
+                
                 self.threadpool = QThreadPool()
                 self.token_counter = TokenCounter()
                 
                 try:
                     self.db_manager = DatabaseManager()
                 except Exception as e:
-                    gui_print_error(f"Database Init failed: {e}")
+                    print(f"[FATAL] Database Init failed: {e}")
                     QMessageBox.critical(self, "Database Error", f"Init failed: {e}")
                     sys.exit(1)
 
+                # 2. Setup UI
+                self._create_docks()
+                self._setup_central_widget()
+                
+                # 3. Connect log signal
+                log_signal.connect(self._append_log)
+                
                 # 4. Load data
                 self._load_config()
                 self._populate_history_list()
                 self._populate_system_prompts()
+                
+                # 5. Apply initial settings (Font Size)
+                # Note: JS part will be skipped here because is_web_ready is False
+                self._apply_ui_settings()
 
             def closeEvent(self, event):
                 self.threadpool.waitForDone(1000)
@@ -347,12 +407,31 @@ def main_application():
                 self.log_output.append(text.strip())
                 self.log_output.verticalScrollBar().setValue(self.log_output.verticalScrollBar().maximum())
 
+            def _apply_ui_settings(self):
+                """Applies font size and other UI settings from config."""
+                font_size = self.settings_manager.get("font_size")
+                
+                # Create font object
+                font = QFont()
+                font.setPixelSize(font_size)
+
+                # 1. Apply to Input Box
+                self.input_box.setFont(font)
+                
+                # 2. Apply to History List (Saved Conversations)
+                self.history_list.setFont(font)
+                
+                # 3. Apply to Chat View (via JS) - Only if page is loaded
+                if self.is_web_ready:
+                    self.chat_view.page().runJavaScript(f"setFontSize('{font_size}px');")
+                    gui_print_info(f"Applied UI settings: Font Size={font_size}px")
+                else:
+                    gui_print_info(f"Applied UI settings (Python only): Font Size={font_size}px")
+
             def _create_docks(self):
                 # Left Dock (History & Logs)
                 self.left_dock = QDockWidget("History & Logs", self)
                 self.left_dock.setAllowedAreas(Qt.DockWidgetArea.LeftDockWidgetArea)
-                
-                # REMOVE TITLE BAR & DISABLE CLOSING
                 self.left_dock.setTitleBarWidget(QWidget())
                 self.left_dock.setFeatures(QDockWidget.DockWidgetFeature.NoDockWidgetFeatures)
 
@@ -361,13 +440,15 @@ def main_application():
                 left_layout.setContentsMargins(5, 5, 5, 5)
 
                 # --- Section 1: History ---
-                left_layout.addWidget(QLabel("<b>Saved Conversations:</b>"))
-
+                
+                # [UX] New Chat Button ABOVE the label
                 hist_btns = QHBoxLayout()
                 self.new_chat_button = QPushButton("New Chat")
                 self.new_chat_button.clicked.connect(self._new_chat)
                 hist_btns.addWidget(self.new_chat_button)
                 left_layout.addLayout(hist_btns)
+
+                left_layout.addWidget(QLabel("<b>Saved Conversations:</b>"))
                 
                 self.history_list = QListWidget()
                 self.history_list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
@@ -382,7 +463,6 @@ def main_application():
 
                 self.log_output = QTextEdit()
                 self.log_output.setReadOnly(True)
-                # [UX] High Contrast: White background, Black text
                 self.log_output.setStyleSheet("background-color: #ffffff; color: #000000; font-family: monospace; border: 1px solid #ccc;")
                 left_layout.addWidget(self.log_output, 1)
                 
@@ -392,8 +472,6 @@ def main_application():
                 # Right Dock (Controls)
                 self.controls_dock = QDockWidget("Controls", self)
                 self.controls_dock.setAllowedAreas(Qt.DockWidgetArea.RightDockWidgetArea)
-                
-                # REMOVE TITLE BAR & DISABLE CLOSING
                 self.controls_dock.setTitleBarWidget(QWidget())
                 self.controls_dock.setFeatures(QDockWidget.DockWidgetFeature.NoDockWidgetFeatures)
 
@@ -446,6 +524,14 @@ def main_application():
 
                 controls_layout.addSpacing(20)
 
+                # Settings Button
+                self.btn_settings = QPushButton("Settings")
+                self.btn_settings.setIcon(QIcon.fromTheme("preferences-system"))
+                self.btn_settings.clicked.connect(self._open_settings)
+                controls_layout.addWidget(self.btn_settings)
+
+                controls_layout.addSpacing(10)
+
                 # Copy Full Chat
                 self.btn_copy_all = QPushButton("Copy Full Conversation")
                 self.btn_copy_all.clicked.connect(self._copy_full_chat)
@@ -466,36 +552,35 @@ def main_application():
                 central_widget = QWidget()
                 layout = QVBoxLayout(central_widget)
                 
-                # [UX] Resizable Layout: Use QSplitter
                 splitter = QSplitter(Qt.Orientation.Vertical)
                 
                 # 1. Top Pane: Chat View
                 self.chat_view = QWebEngineView()
                 self._setup_web_channel()
+                
+                # [Fix] Connect loadFinished to a slot that updates state and applies settings
+                self.chat_view.loadFinished.connect(self._on_page_load_finished)
+                
                 splitter.addWidget(self.chat_view)
                 
                 # 2. Bottom Pane: Input Container
                 input_container = QWidget()
                 input_layout = QVBoxLayout(input_container)
-                input_layout.setContentsMargins(0, 5, 0, 0) # Small top margin for separation
+                input_layout.setContentsMargins(0, 5, 0, 0)
                 
-                # Staging Area (Using FlowLayout)
+                # Staging Area
                 self.staging_container = QWidget()
-                # [UX] Use FlowLayout to wrap attachments instead of widening window
                 self.staging_layout = FlowLayout(self.staging_container) 
                 self.staging_layout.setContentsMargins(0, 0, 0, 0)
                 self.staging_container.setVisible(False)
                 input_layout.addWidget(self.staging_container)
 
-                # Input Row (Text + Attach)
+                # Input Row
                 input_row = QHBoxLayout()
                 
                 self.input_box = QTextEdit()
                 self.input_box.setPlaceholderText("Enter your message here...")
-                # [UX] High Contrast: White background, Black text
                 self.input_box.setStyleSheet("background-color: #ffffff; color: #000000; border: 1px solid #ccc;")
-                
-                # [FIX] Remove fixed height, set minimum height instead.
                 self.input_box.setMinimumHeight(60) 
                 
                 input_row.addWidget(self.input_box)
@@ -503,14 +588,10 @@ def main_application():
                 self.attach_btn = QPushButton("Attach")
                 self.attach_btn.setToolTip("Attach File(s)")
                 self.attach_btn.clicked.connect(self._attach_file)
-                
-                # [FIX] Allow the attach button to expand vertically with the text box
                 self.attach_btn.setFixedWidth(60)
                 self.attach_btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Expanding)
                 
                 input_row.addWidget(self.attach_btn)
-                
-                # [FIX] Add stretch factor 1 to the input row so it claims the vertical space
                 input_layout.addLayout(input_row, 1)
 
                 # Send Button
@@ -520,12 +601,18 @@ def main_application():
                 
                 splitter.addWidget(input_container)
                 
-                # Set initial sizes (Chat gets priority)
                 splitter.setStretchFactor(0, 4)
                 splitter.setStretchFactor(1, 1)
                 
                 layout.addWidget(splitter)
                 self.setCentralWidget(central_widget)
+
+            @pyqtSlot()
+            def _on_page_load_finished(self):
+                """Slot called when the WebEngine page finishes loading."""
+                self.is_web_ready = True
+                gui_print_info("WebEngine page loaded successfully.")
+                self._apply_ui_settings()
 
             def _setup_web_channel(self):
                 self.chat_backend = ChatBackend(self)
@@ -566,6 +653,18 @@ def main_application():
                 index = self.sys_prompt_combo.findData(current_data)
                 if index >= 0:
                     self.sys_prompt_combo.setCurrentIndex(index)
+
+            # --- Settings Logic ---
+            @pyqtSlot()
+            def _open_settings(self):
+                dialog = SettingsDialog(self.settings_manager, self)
+                if dialog.exec() == QDialog.DialogCode.Accepted:
+                    # Apply changes immediately
+                    new_timeout = self.settings_manager.get("api_timeout")
+                    self.api_manager.set_timeout(new_timeout)
+                    
+                    self._apply_ui_settings()
+                    gui_print_success("Settings saved and applied.")
 
             # --- Context Menu for History ---
             def _show_history_context_menu(self, position):
@@ -617,7 +716,6 @@ def main_application():
                 self.history_list.clearSelection()
                 self.chat_view.page().runJavaScript("clearChat();")
                 
-                # Reset system prompt combo (remove any temporary items)
                 self._populate_system_prompts()
                 self.sys_prompt_combo.setEnabled(True)
                 
@@ -631,14 +729,12 @@ def main_application():
 
                 self.current_conversation_id = convo_id
                 
-                # Load from DB
                 messages_from_db = self.db_manager.get_messages_for_conversation(convo_id)
                 
                 self.current_messages = []
                 self.staged_files = [] 
                 self._update_staging_area()
 
-                # Rebuild memory state
                 for msg in messages_from_db:
                     role = msg["role"]
                     content = msg["content"]
@@ -657,27 +753,19 @@ def main_application():
                         "model_name": model_name
                     })
 
-                # --- System Prompt Sync Logic ---
-                # 1. Reset the combo first to clear old temp items
                 self._populate_system_prompts()
                 
-                # 2. Check if the conversation has a system prompt
                 if self.current_messages and self.current_messages[0]['role'] == 'system':
                     sys_content = self.current_messages[0]['content']
-                    
-                    # 3. Try to find it in the existing list
                     index = self.sys_prompt_combo.findData(sys_content)
                     if index >= 0:
                         self.sys_prompt_combo.setCurrentIndex(index)
                     else:
-                        # 4. If not found (Custom), add it temporarily so the user sees it
                         self.sys_prompt_combo.addItem("[Current Saved Prompt]", sys_content)
                         self.sys_prompt_combo.setCurrentIndex(self.sys_prompt_combo.count() - 1)
                 else:
-                    # No system prompt in this chat, set to None
                     self.sys_prompt_combo.setCurrentIndex(0)
 
-                # Ensure it is ENABLED so user can change it mid-convo
                 self.sys_prompt_combo.setEnabled(True)
 
                 self._refresh_chat_view()
@@ -685,9 +773,7 @@ def main_application():
                 gui_print_success(f"Loaded conversation {convo_id}.")
 
             def _refresh_chat_view(self):
-                """Re-renders the entire chat view based on current messages and settings."""
                 self.chat_view.page().runJavaScript("clearChat();")
-                
                 render_markdown = self.chk_markdown.isChecked()
                 
                 for index, msg in enumerate(self.current_messages):
@@ -695,42 +781,30 @@ def main_application():
                     content = msg["content"]
                     model_name = msg.get("model_name", "")
 
-                    if role == "system":
-                        continue # Don't show system prompts in chat bubble flow
+                    if role == "system": continue
 
-                    # 1. Separate Attachments from Text
                     clean_text, attachments = FileExtractor.strip_attachments_for_ui(content)
                     
-                    # 2. Process Text (Markdown or Plain)
                     if render_markdown:
-                        # Convert to HTML using markdown lib
-                        # extensions=['fenced_code', 'tables'] handles code blocks and tables
                         html_text = markdown.markdown(clean_text, extensions=['fenced_code', 'tables'])
                     else:
                         html_text = html.escape(clean_text)
 
-                    # 3. Re-append Attachment Indicators
                     indicators = ""
                     for filename, _ in attachments:
                         indicators += f'<span class="attachment-indicator">📎 [Attached: {filename}]</span>'
                     
                     final_html = html_text + indicators
-                    
-                    # 4. Send to Frontend
-                    # We pass 'index' so the frontend can ask us to copy the source later
                     self.chat_backend.message_added.emit(index, role, final_html, model_name)
 
-            # --- Token Counting ---
             def _update_token_count(self):
                 count = self.token_counter.count_tokens(self.current_messages)
                 self.token_label.setText(f"Context: ~{count:,} tokens")
 
-            # --- Copy Logic ---
             def copy_message_to_clipboard(self, index):
                 if 0 <= index < len(self.current_messages):
                     msg = self.current_messages[index]
                     raw_content = msg["content"]
-                    # Strip hidden file data, keep indicator
                     clean_content = FileExtractor.strip_attachments_for_copy(raw_content)
                     QApplication.clipboard().setText(clean_content)
                     gui_print_info("Message copied to clipboard.")
@@ -753,12 +827,9 @@ def main_application():
                 else:
                     gui_print_warning("Nothing to copy.")
 
-            # --- File Attachment Logic ---
-
             @pyqtSlot()
             def _attach_file(self):
                 filter_str = FileExtractor.get_supported_extensions()
-                # [UX] Use getOpenFileNames for multi-selection
                 files, _ = QFileDialog.getOpenFileNames(self, "Attach File(s)", "", filter_str)
                 
                 if files:
@@ -780,7 +851,6 @@ def main_application():
                     self._update_staging_area()
 
             def _update_staging_area(self):
-                # Clear existing items from FlowLayout
                 while self.staging_layout.count():
                     child = self.staging_layout.takeAt(0)
                     if child.widget():
@@ -810,8 +880,6 @@ def main_application():
                     chip_layout.addWidget(btn_del)
                     
                     self.staging_layout.addWidget(chip)
-                
-                # FlowLayout doesn't need addStretch()
 
             @pyqtSlot()
             def send_message(self):
@@ -827,7 +895,6 @@ def main_application():
                 model_id = self.model_combo.currentData()
                 temperature = self.temp_slider.value() / 100.0
 
-                # --- SYSTEM PROMPT SYNC ---
                 selected_prompt = self.sys_prompt_combo.currentData()
                 
                 if self.current_messages and self.current_messages[0]['role'] == 'system':
@@ -841,9 +908,7 @@ def main_application():
                         "content": selected_prompt, 
                         "model_name": "System"
                     })
-                # --------------------------
 
-                # --- Process Attachments ---
                 full_message_content = user_text
                 
                 if self.staged_files:
@@ -862,7 +927,6 @@ def main_application():
                     self.staged_files = []
                     self._update_staging_area()
 
-                # --- New Conversation Logic ---
                 if self.current_conversation_id is None:
                     title_text = user_text if user_text else "File Attachment"
                     title = title_text[:40] + "..." if len(title_text) > 40 else title_text
@@ -880,7 +944,6 @@ def main_application():
                     if self.current_messages and self.current_messages[0]['role'] == 'system':
                         self.db_manager.add_message(new_id, "system", self.current_messages[0]['content'], None, None)
 
-                # --- Handle User Message ---
                 self.db_manager.add_message(self.current_conversation_id, "user", full_message_content, None, None)
                 
                 self.current_messages.append({
@@ -889,7 +952,6 @@ def main_application():
                     "model_name": "You"
                 })
                 
-                # Update UI
                 new_msg_index = len(self.current_messages) - 1
                 
                 clean_text, attachments = FileExtractor.strip_attachments_for_ui(full_message_content)
@@ -908,25 +970,21 @@ def main_application():
                 self.set_ui_enabled(False)
                 self._update_token_count()
 
-                # [UX] Show "Thinking..." indicator immediately
                 self.chat_view.page().runJavaScript("showThinking();")
 
                 worker = ApiWorker(self.api_manager, model_id, self.current_messages, temperature)
                 worker.signals.finished.connect(self.handle_api_response)
                 worker.signals.error.connect(self.handle_api_error)
-                # [UX] Connect first_token signal to update status
                 worker.signals.first_token.connect(self.handle_first_token)
                 self.threadpool.start(worker)
 
             @pyqtSlot()
             def handle_first_token(self):
-                """Called when the first token is received from the API."""
                 self.chat_view.page().runJavaScript("updateThinking('Generating Response...');")
 
             @pyqtSlot(dict)
             def handle_api_response(self, response):
                 try:
-                    # [UX] Remove Thinking indicator (it will be replaced by the message)
                     self.chat_view.page().runJavaScript("removeThinking();")
 
                     content = response['choices'][0]['message']['content']
@@ -944,7 +1002,6 @@ def main_application():
                             self.model_combo.currentData(), self.temp_slider.value() / 100.0
                         )
                     
-                    # Render Assistant Response
                     new_msg_index = len(self.current_messages) - 1
                     if self.chk_markdown.isChecked():
                         html_content = markdown.markdown(content, extensions=['fenced_code', 'tables'])
@@ -960,7 +1017,6 @@ def main_application():
 
             @pyqtSlot(str)
             def handle_api_error(self, msg):
-                # [UX] Ensure thinking indicator is gone on error
                 self.chat_view.page().runJavaScript("removeThinking();")
                 gui_print_error(msg)
                 self.set_ui_enabled(True)
