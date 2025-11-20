@@ -1,126 +1,93 @@
-# YaOG
-**Yet Another OpenRouter GUI**
+# YaOG - Yet another Openrouter GUI
 
-> **Version:** 2.4.3
-> **Status:** Milestone 2 Complete (Advanced Features & UX Polish)
+YaOG is a standalone, lightweight Linux desktop client for the OpenRouter.ai API, built using Python and PyQt6. It provides a persistent, customizable chat interface with support for multiple models, file attachments, system prompts, and local data management.
 
-YaOG is a robust, standalone desktop application built with Python and PyQt6. It serves as a feature-rich, local-first graphical user interface for interacting with the OpenRouter.ai API. It prioritizes user privacy by storing all conversation history locally via SQLite and offers power-user features like file attachments, system prompt management, and granular model control.
+## Features
 
-This application is designed and tested specifically for Linux environments.
+**Core Chat Functionality**
+*   **Multi-Model Support:** Seamlessly switch between different LLMs (e.g., Mistral, Gemini, DeepSeek) within the same application.
+*   **Markdown Rendering:** Chat output supports full Markdown rendering, including syntax highlighting for code blocks and tables.
+*   **Streaming Responses:** Real-time text generation feedback.
+*   **Token Counting:** Real-time estimation of context token usage using tiktoken.
 
----
+**Data & Persistence**
+*   **Local Database:** All conversations and messages are automatically saved to a local SQLite database (~/.or-client/or-client.db).
+*   **History Management:** Rename and delete saved conversations via the sidebar.
+*   **Import/Export:** Export specific conversations or system prompts to JSON for backup or sharing. Import them back into the application via the context menu.
 
-## Key Features
+**Context & Attachments**
+*   **File Attachments:** Attach text-based files (Code, Logs, Markdown, CSV) and PDF documents to the chat context. The application automatically extracts text from these files.
+*   **System Prompts:** Create, save, and manage custom system instructions (personas) to guide the AI's behavior.
 
-### Core Chat Experience
-*   **Multi-Model Support:** Seamlessly switch between models (e.g., Mistral, Llama 3, Gemma) per message generation.
-*   **Parameter Control:** Adjust temperature via a slider to control creativity.
-*   **Streamed Responses:** Real-time text streaming for a responsive feel.
-*   **Token Counting:** Real-time context token estimation using `tiktoken`.
+**Configuration**
+*   **GUI Settings:** Manage API keys, timeouts, and font sizes directly through the application interface.
+*   **Model Manager:** Add, edit, or remove available models via the Settings dialog without editing configuration files manually.
 
-### Advanced Capabilities (Milestone 2)
-*   **File Attachments:**
-    *   Upload text-based files (Code, Logs, CSV, JSON, Markdown) and PDFs.
-    *   Automatic text extraction (using `PyMuPDF` for PDFs) injected directly into the context.
-    *   Staging area to review attachments before sending.
-*   **System Prompt Manager:**
-    *   Create, Edit, Save, and Delete custom system personas (e.g., "Coding Assistant", "Creative Writer").
-    *   Select a saved prompt from a dropdown to instantly apply it to the current chat.
-*   **Markdown Rendering:**
-    *   Toggleable "Render Markdown" checkbox.
-    *   View code blocks, tables, and formatting, or switch to raw text for copying.
-*   **Local Persistence:**
-    *   All chats and messages are saved automatically to a local SQLite database (`~/.or-client/or-client.db`).
-    *   History persists across sessions.
+## Prerequisites
 
-### UX Enhancements
-*   **Chat Management:** Right-click conversations in the history sidebar to **Rename** or **Delete** them.
-*   **Copy Tools:** One-click "Copy" button for every assistant message (strips out hidden attachment metadata automatically).
-*   **Copy Full Conversation:** Button to copy the entire chat log to the clipboard.
-*   **Locked UI:** Clean, fixed-layout dock widgets for a stable desktop experience.
-
----
+*   **Linux OS**
+*   **Python 3.10+**
+*   **OpenRouter API Key:** You need a valid API key from openrouter.ai.
 
 ## Installation
 
-### Prerequisites
-*   **Python 3.10+**
-*   An API Key from OpenRouter.ai
+1.  **Clone or Download the Repository**
+    Ensure all source files (yaog.py, api_manager.py, database_manager.py, settings_manager.py, worker_manager.py, utils.py, chat_template.html) are in the same directory.
 
-### Setup
+2.  **Create a Virtual Environment (Recommended)**
 
-1.  **Clone or Download the Repository:**
+    python -m venv venv
+    source venv/bin/activate
 
-        git clone <repository-url>
-        cd yaog
+3.  **Install Dependencies**
+    Use the provided requirements.txt file:
 
-2.  **Create a Virtual Environment (Recommended):**
+    pip install -r requirements.txt
 
-        python -m venv venv
-        source venv/bin/activate
+    Dependencies include: PyQt6, PyQt6-WebEngine, httpx, python-dotenv, pymupdf, markdown, tiktoken.
 
-3.  **Install Dependencies:**
+## Configuration
 
-        pip install -r requirements.txt
+Upon the first launch, YaOG will automatically generate the necessary configuration files if they are missing:
 
-4.  **Configuration:**
-    *   The application will automatically generate a `.env` file and a `models.json` file on the first run if they are missing.
-    *   Open `.env` and paste your API key:
+*   .env: Stores your API Key.
+*   models.json: Stores the list of available models.
+*   settings.json: Stores UI preferences (font size, timeout).
 
-            OPENROUTER_API_KEY="sk-or-v1-..."
-
-    *   (Optional) Edit `models.json` to add your preferred OpenRouter model IDs.
-
----
+### Setting the API Key
+1.  Launch the application.
+2.  Click the **Settings** button in the bottom right.
+3.  Navigate to the **API & Network** tab.
+4.  Enter your OpenRouter API Key and click **Update API Key**.
 
 ## Usage
 
-### Running the App
+### Running the Application
 
     python yaog.py
 
-### Workflow
-1.  **Select a Model:** Choose a model from the dropdown in the top-right.
-2.  **Set System Prompt (Optional):** Select a pre-saved prompt or click "Manage Prompts" to create a new one.
-3.  **Attach Files:** Click the "Attach" button to select files. They will appear in the staging area above the input box.
-4.  **Chat:** Type your message and hit "Send".
-5.  **Manage History:**
-    *   Click a chat in the left sidebar to load it.
-    *   **Right-click** a chat title to Rename or Delete it.
+### Managing Chats
+*   **New Chat:** Click the "New Chat" button in the top left.
+*   **Load Chat:** Click any item in the "Saved Conversations" list.
+*   **Context Menu:** Right-click on a chat in the list to **Rename**, **Delete**, or **Export** it.
+*   **Import Chat:** Right-click anywhere in the "Saved Conversations" list area and select **Import Chat (JSON)**.
 
----
+### Managing Models
+1.  Go to **Settings > Models**.
+2.  Use the **Add**, **Edit**, or **Delete** buttons to configure which models appear in the main dropdown.
+3.  You will need the specific Model ID string from OpenRouter (e.g., mistralai/mistral-7b-instruct:free).
 
-## Architecture
+### File Attachments
+Click the **Attach** button next to the input box to select files. Supported formats include PDF, TXT, MD, PY, JS, HTML, JSON, CSV, and logs. The content of the files is extracted and appended to your message.
 
-The application follows a modular design separating UI, Logic, and Data:
+## Troubleshooting
 
-*   **`yaog.py`**: Main entry point. Handles the `QMainWindow`, UI layout, and connects signals/slots.
-*   **`api_manager.py`**: Handles HTTP requests to OpenRouter using `httpx` (supports SSE streaming).
-*   **`database_manager.py`**: Manages the SQLite database (Schema migration, CRUD for Chats/Messages/Prompts).
-*   **`worker_manager.py`**: Runs API calls in background threads (`QThreadPool`) to keep the UI responsive.
-*   **`chat_template.html`**: The frontend view layer running inside `QWebEngineView`.
-*   **`utils.py`**: Utilities for file extraction (`FileExtractor`), token counting (`TokenCounter`), and crash handling.
+**WebEngine Issues**
+If the application crashes or displays a blank white screen, it may be due to GPU acceleration issues with QtWebEngine on certain Linux configurations. The application attempts to handle this automatically by passing --no-sandbox and --disable-gpu arguments on startup.
 
----
-
-## Roadmap
-
-### Completed
-*   [x] Core MVP (Chat, History, Settings).
-*   [x] Database Persistence.
-*   [x] System Prompt Management (CRUD).
-*   [x] File Attachments (PDF & Text).
-*   [x] Markdown Rendering.
-*   [x] Context Menu (Rename/Delete).
-*   [x] Token Counter.
-
-### Upcoming / Postponed
-*   [ ] **History Organization:** Search functionality and Tagging system for conversations (Postponed to future milestone).
-*   [ ] **UI Theming:** Night/Day mode toggles and font size adjustments.
-*   [ ] **Batch Uploads:** Enhanced UI for selecting multiple documents simultaneously.
-*   [ ] **Packaging:** Build scripts (PyInstaller) for standalone executables.
-
----
+**Missing Files**
+If chat_template.html is missing, the chat view will not load. Ensure this file exists in the root directory.
 
 ## License
-This project is open-source. Feel free to modify and distribute.
+
+This project is provided as-is for educational and personal use.
