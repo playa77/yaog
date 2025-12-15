@@ -3,7 +3,10 @@ design_doc.pdf
 roadmap.pdf
 design_doc.md
 roadmap.md
+designdoc.md
+techspec.md
 prompt.txt
+test_phase*.py
 # --- Python & Virtual Env ---
 __pycache__/
 *.py[cod]

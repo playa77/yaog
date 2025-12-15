@@ -1,10 +1,8 @@
 <!-- chat_template.html for YaOG (yaog.py) -->
-<!-- Version: 2.5 -->
-<!-- Description: The frontend view for the chat interface. -->
-<!-- Change Log (v2.5): -->
-<!-- - [Settings] Added setFontSize() JS function for dynamic font scaling. -->
-<!-- Change Log (v2.4): -->
-<!-- - [UX] Added "Thinking..." indicator logic and styling (pulsing animation). -->
+<!-- Version: 3.4.0 (Phase 1: Smooth Streaming) -->
+<!-- Description: Frontend view supporting Real-Time Streaming & Thinking Indicator. -->
+<!-- Change Log (v3.4.0): -->
+<!-- - [Performance] Added requestAnimationFrame to throttle scrolling (decouples render from layout). -->
 
 <!DOCTYPE html>
 <html>
@@ -14,10 +12,10 @@
     <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
     <style>
         body {
-            background-color: #ffffff; /* White background for High Contrast */
-            color: #000000;            /* Black text */
+            background-color: #ffffff;
+            color: #000000;
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-            font-size: 16px; /* Default, can be overridden by JS */
+            font-size: 16px;
             margin: 0;
             padding: 15px;
         }
@@ -35,7 +33,7 @@
             max-width: 85%;
             line-height: 1.5;
             position: relative;
-            box-shadow: 0 1px 2px rgba(0,0,0,0.1); /* Subtle shadow for depth */
+            box-shadow: 0 1px 2px rgba(0,0,0,0.1);
         }
 
         .user {
@@ -78,7 +76,7 @@
         }
 
         .message-header strong {
-            color: #333333; /* Dark Grey for headers */
+            color: #333333;
         }
 
         .copy-btn {
@@ -98,15 +96,11 @@
             border-color: #999;
         }
 
-        /* 
-           .content-body handles the actual text/html payload.
-        */
         .content-body {
             white-space: pre-wrap;
             word-wrap: break-word;
         }
         
-        /* Styling for the attachment indicator */
         .attachment-indicator {
             color: #555;
             font-family: sans-serif;
@@ -122,15 +116,15 @@
         /* Markdown specific styling */
         .content-body code {
             background-color: #eee;
-            color: #d63384; /* Pink/Red for inline code */
+            color: #d63384;
             padding: 2px 4px;
             border-radius: 3px;
             font-family: monospace;
         }
         
         .content-body pre {
-            background-color: #2d2d2d; /* Dark background for code blocks */
-            color: #f8f8f2;            /* Light text for code */
+            background-color: #2d2d2d;
+            color: #f8f8f2;
             padding: 10px;
             border-radius: 5px;
             overflow-x: auto;
@@ -149,13 +143,15 @@
 
     <script>
         let backendProxy = null;
+        let currentContentDiv = null; // Tracks the div currently receiving stream data
+        let isScrolling = false;      // Lock for scroll throttling
 
         function clearChat() {
             const chatContainer = document.getElementById('chat-container');
             chatContainer.innerHTML = '';
+            currentContentDiv = null;
         }
 
-        // --- Settings: Font Size Control ---
         function setFontSize(sizePx) {
             document.body.style.fontSize = sizePx;
         }
@@ -163,53 +159,18 @@
         document.addEventListener("DOMContentLoaded", function() {
             new QWebChannel(qt.webChannelTransport, function(channel) {
                 backendProxy = channel.objects.backend;
-                backendProxy.message_added.connect(appendMessage);
+                // Connect signals
+                backendProxy.message_added.connect(appendFullMessage);
+                backendProxy.token_received.connect(appendToken);
             });
         });
 
-        function appendMessage(index, role, content, modelName) {
-            // Ensure thinking indicator is removed if it exists
-            removeThinking();
-
-            const chatContainer = document.getElementById('chat-container');
-
-            const messageDiv = document.createElement('div');
-            messageDiv.classList.add('message', role);
-
-            // Header Row
-            const headerDiv = document.createElement('div');
-            headerDiv.classList.add('message-header');
-
-            const title = document.createElement('strong');
-            title.textContent = (role === 'user') ? "You" : `Assistant (${modelName})`;
-            headerDiv.appendChild(title);
-
-            // Copy Button
-            const copyBtn = document.createElement('button');
-            copyBtn.textContent = "Copy";
-            copyBtn.classList.add('copy-btn');
-            copyBtn.onclick = function() {
-                if (backendProxy) {
-                    backendProxy.copy_message(index);
-                }
-            };
-            headerDiv.appendChild(copyBtn);
-
-            messageDiv.appendChild(headerDiv);
-
-            // Content Body
-            const contentDiv = document.createElement('div');
-            contentDiv.classList.add('content-body');
-            
-            contentDiv.innerHTML = content; 
-            
-            messageDiv.appendChild(contentDiv);
-            chatContainer.appendChild(messageDiv);
-            window.scrollTo(0, document.body.scrollHeight);
+        // --- Legacy/History Loading (Full Message) ---
+        function appendFullMessage(index, role, content, modelName) {
+            createMessageBubble(index, role, modelName, content, true);
         }
 
         // --- Thinking Indicator Logic ---
-
         function showThinking() {
             removeThinking(); // Prevent duplicates
             const chatContainer = document.getElementById('chat-container');
@@ -223,18 +184,88 @@
             window.scrollTo(0, document.body.scrollHeight);
         }
 
-        function updateThinking(text) {
-            const thinkingDiv = document.getElementById('thinking-indicator');
-            if (thinkingDiv) {
-                thinkingDiv.textContent = text;
-            }
-        }
-
         function removeThinking() {
             const thinkingDiv = document.getElementById('thinking-indicator');
             if (thinkingDiv) {
                 thinkingDiv.remove();
             }
+        }
+
+        // --- Streaming Logic ---
+
+        // 1. Called by Python when first token arrives (replaces Thinking)
+        function start_message(index, role, modelName) {
+            removeThinking();
+            // Create an empty bubble
+            createMessageBubble(index, role, modelName, "", false);
+        }
+
+        // 2. Called by Python via Signal for every token
+        function appendToken(text) {
+            if (currentContentDiv) {
+                // We use createTextNode to safely escape HTML special chars during streaming
+                currentContentDiv.appendChild(document.createTextNode(text));
+                
+                // Throttle scrolling to the refresh rate to avoid layout thrashing
+                if (!isScrolling) {
+                    isScrolling = true;
+                    window.requestAnimationFrame(() => {
+                        window.scrollTo(0, document.body.scrollHeight);
+                        isScrolling = false;
+                    });
+                }
+            }
+        }
+
+        // 3. Called by Python when stream ends (replaces raw text with Markdown HTML)
+        function finalize_message(htmlContent) {
+            if (currentContentDiv) {
+                currentContentDiv.innerHTML = htmlContent;
+                window.scrollTo(0, document.body.scrollHeight);
+                currentContentDiv = null; // Reset
+            }
+        }
+
+        // Helper to create the DOM structure
+        function createMessageBubble(index, role, modelName, initialContent, isFinal) {
+            const chatContainer = document.getElementById('chat-container');
+
+            const messageDiv = document.createElement('div');
+            messageDiv.classList.add('message', role);
+
+            // Header
+            const headerDiv = document.createElement('div');
+            headerDiv.classList.add('message-header');
+
+            const title = document.createElement('strong');
+            title.textContent = (role === 'user') ? "You" : `Assistant (${modelName})`;
+            headerDiv.appendChild(title);
+
+            const copyBtn = document.createElement('button');
+            copyBtn.textContent = "Copy";
+            copyBtn.classList.add('copy-btn');
+            copyBtn.onclick = function() {
+                if (backendProxy) {
+                    backendProxy.copy_message(index);
+                }
+            };
+            headerDiv.appendChild(copyBtn);
+            messageDiv.appendChild(headerDiv);
+
+            // Content
+            const contentDiv = document.createElement('div');
+            contentDiv.classList.add('content-body');
+            
+            if (isFinal) {
+                contentDiv.innerHTML = initialContent;
+            } else {
+                contentDiv.textContent = initialContent;
+                currentContentDiv = contentDiv; // Set as active target for streaming
+            }
+            
+            messageDiv.appendChild(contentDiv);
+            chatContainer.appendChild(messageDiv);
+            window.scrollTo(0, document.body.scrollHeight);
         }
     </script>
 

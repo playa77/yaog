@@ -1,14 +1,12 @@
 # YaOG -- Yet another Openrouter GUI
-# Version: 3.2
-# Description: Instructive Roadmap - M3/M4 (Settings, Data Management, Models)
+# Version: 3.3.1 (Phase 1 Fixes)
+# Description: Implements Real-Time Streaming via QWebChannel.
 #
-# Change Log (v3.2):
-# - [Build] Implemented resource_path() for single-file executable bundling.
-#
-# Change Log (v3.1):
-# - [Branding] Corrected application name to "YaOG".
-# - [UX] Moved "Import Chat" to the History List context menu.
-# - [UX] Context menu now functions on empty space (for Import) and items (for Edit/Export).
+# Change Log (v3.3.1):
+# - [Regression Fix] Restored 'Thinking...' logic in send_message/handle_first_token.
+# - [Regression Fix] Improved Ctrl+C handling with explicit sys.exit(0).
+# - [Streaming] ChatBackend now has 'token_received' signal and 'stream_token' slot.
+# - [Streaming] Added finalize_message() to handle Markdown rendering after stream ends.
 
 import os
 import sys
@@ -70,8 +68,19 @@ def main_application():
 
         app = QApplication(sys.argv)
 
-        signal.signal(signal.SIGINT, lambda sig, frame: QApplication.quit())
-        def process_signals(): pass
+        # --- Robust Ctrl+C Handling ---
+        # We use a QTimer to let the Python interpreter run periodically to catch SIGINT.
+        # We also define a custom handler to ensure we exit cleanly.
+        def sigint_handler(sig, frame):
+            print("\n[INFO] Ctrl+C detected. Exiting...")
+            QApplication.quit()
+            sys.exit(0) # Force exit
+        
+        signal.signal(signal.SIGINT, sigint_handler)
+        
+        def process_signals(): 
+            pass # Just to let the interpreter run
+        
         signal_timer = QTimer()
         signal_timer.setInterval(100)
         signal_timer.timeout.connect(process_signals)
@@ -137,13 +146,23 @@ def main_application():
                 return y + line_height - rect.y()
 
         class ChatBackend(QObject):
+            # Signal to add a full message (used for history loading)
             message_added = pyqtSignal(int, str, str, str, name='message_added')
+            # Signal to stream a single token
+            token_received = pyqtSignal(str, name='token_received')
+
             def __init__(self, main_window):
                 super().__init__()
                 self.main_window = main_window
+
             @pyqtSlot(int)
             def copy_message(self, index):
                 self.main_window.copy_message_to_clipboard(index)
+            
+            @pyqtSlot(str)
+            def stream_token(self, token):
+                # Bridge: Python Worker -> Python Main Thread -> JS
+                self.token_received.emit(token)
 
         # --- Settings Dialog (Tabbed) ---
         class SettingsDialog(QDialog):
@@ -460,7 +479,7 @@ def main_application():
         class MainWindow(QMainWindow):
             def __init__(self, log_signal):
                 super().__init__()
-                self.setWindowTitle("YaOG (v3.2)")
+                self.setWindowTitle("YaOG (v3.3)")
                 self.setGeometry(100, 100, 1400, 900)
                 
                 self.current_messages = []
@@ -864,6 +883,7 @@ def main_application():
                     indicators = ""
                     for filename, _ in attachments:
                         indicators += f'<span class="attachment-indicator">📎 [Attached: {filename}]</span>'
+                    # Use message_added for bulk loading history
                     self.chat_backend.message_added.emit(index, role, html_text + indicators, model_name)
 
             def _update_token_count(self):
@@ -935,15 +955,18 @@ def main_application():
                     return
 
                 model_id = self.model_combo.currentData()
+                model_name = self.model_combo.currentText()
                 temperature = self.temp_slider.value() / 100.0
                 selected_prompt = self.sys_prompt_combo.currentData()
                 
+                # Handle System Prompt
                 if self.current_messages and self.current_messages[0]['role'] == 'system':
                     if selected_prompt: self.current_messages[0]['content'] = selected_prompt
                     else: self.current_messages.pop(0)
                 elif selected_prompt:
                     self.current_messages.insert(0, {"role": "system", "content": selected_prompt, "model_name": "System"})
 
+                # Handle User Message & Attachments
                 full_message_content = user_text
                 if self.staged_files:
                     for fpath in self.staged_files:
@@ -957,6 +980,7 @@ def main_application():
                     self.staged_files = []
                     self._update_staging_area()
 
+                # Handle New Conversation Creation
                 if self.current_conversation_id is None:
                     title_text = user_text if user_text else "File Attachment"
                     title = title_text[:40] + "..." if len(title_text) > 40 else title_text
@@ -970,9 +994,11 @@ def main_application():
                     if self.current_messages and self.current_messages[0]['role'] == 'system':
                         self.db_manager.add_message(new_id, "system", self.current_messages[0]['content'], None, None)
 
+                # Save User Message to DB
                 self.db_manager.add_message(self.current_conversation_id, "user", full_message_content, None, None)
                 self.current_messages.append({"role": "user", "content": full_message_content, "model_name": "You"})
                 
+                # Render User Message to UI
                 new_msg_index = len(self.current_messages) - 1
                 clean_text, attachments = FileExtractor.strip_attachments_for_ui(full_message_content)
                 if self.chk_markdown.isChecked(): html_text = markdown.markdown(clean_text, extensions=['fenced_code', 'tables'])
@@ -984,34 +1010,71 @@ def main_application():
                 self.input_box.clear()
                 self.set_ui_enabled(False)
                 self._update_token_count()
+                
+                # --- STREAMING SETUP ---
+                # 1. Show Thinking Indicator immediately
                 self.chat_view.page().runJavaScript("showThinking();")
 
+                # 2. Start Worker
                 worker = ApiWorker(self.api_manager, model_id, self.current_messages, temperature)
-                worker.signals.finished.connect(self.handle_api_response)
+                
+                # 3. Connect Signals
+                worker.signals.first_token.connect(lambda: self.handle_first_token(model_name))
+                worker.signals.new_token.connect(self.chat_backend.stream_token)
+                worker.signals.finished.connect(self.finalize_message)
                 worker.signals.error.connect(self.handle_api_error)
-                worker.signals.first_token.connect(self.handle_first_token)
+                
                 self.threadpool.start(worker)
 
             @pyqtSlot()
-            def handle_first_token(self):
-                self.chat_view.page().runJavaScript("updateThinking('Generating Response...');")
+            def handle_first_token(self, model_name):
+                """
+                Called when the first token arrives.
+                Swaps 'Thinking...' for the actual message bubble.
+                """
+                assistant_index = len(self.current_messages)
+                self.chat_view.page().runJavaScript(f"start_message({assistant_index}, 'assistant', '{model_name}');")
 
             @pyqtSlot(dict)
-            def handle_api_response(self, response):
+            def finalize_message(self, response):
+                """
+                Called when the stream is complete.
+                1. Saves full text to DB.
+                2. Updates internal state.
+                3. Triggers Markdown render in JS.
+                """
                 try:
-                    self.chat_view.page().runJavaScript("removeThinking();")
                     content = response['choices'][0]['message']['content']
                     model_name = self.model_combo.currentText()
+                    
+                    # Update Internal State
                     self.current_messages.append({"role": "assistant", "content": content, "model_name": model_name})
+                    
+                    # Save to DB
                     if self.current_conversation_id:
-                        self.db_manager.add_message(self.current_conversation_id, "assistant", content, self.model_combo.currentData(), self.temp_slider.value() / 100.0)
-                    new_msg_index = len(self.current_messages) - 1
-                    if self.chk_markdown.isChecked(): html_content = markdown.markdown(content, extensions=['fenced_code', 'tables'])
-                    else: html_content = html.escape(content)
-                    self.chat_backend.message_added.emit(new_msg_index, "assistant", html_content, model_name)
+                        self.db_manager.add_message(
+                            self.current_conversation_id, 
+                            "assistant", 
+                            content, 
+                            self.model_combo.currentData(), 
+                            self.temp_slider.value() / 100.0
+                        )
+                    
+                    # Render Markdown
+                    if self.chk_markdown.isChecked(): 
+                        html_content = markdown.markdown(content, extensions=['fenced_code', 'tables'])
+                    else: 
+                        html_content = html.escape(content)
+                    
+                    # Send final HTML to JS to replace the raw stream
+                    safe_html = html_content.replace("\\", "\\\\").replace("'", "\\'").replace("\n", "\\n").replace("\r", "")
+                    self.chat_view.page().runJavaScript(f"finalize_message('{safe_html}');")
+                    
                     self._update_token_count()
-                except Exception as e: self.handle_api_error(f"Parse error: {e}")
-                finally: self.set_ui_enabled(True)
+                except Exception as e: 
+                    self.handle_api_error(f"Finalization error: {e}")
+                finally: 
+                    self.set_ui_enabled(True)
 
             @pyqtSlot(str)
             def handle_api_error(self, msg):
@@ -1025,7 +1088,7 @@ def main_application():
                 self.input_box.setEnabled(enabled)
                 self.attach_btn.setEnabled(enabled)
                 self.controls_dock.setEnabled(enabled)
-                self.send_button.setText("Send Message" if enabled else "Waiting...")
+                self.send_button.setText("Send Message" if enabled else "Generating...")
 
         window = MainWindow(log_stream.log_signal)
         window.show()
