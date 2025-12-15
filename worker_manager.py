@@ -1,11 +1,11 @@
 # worker_manager.py for YaOG (yaog.py)
-# Version: 3.4.0 (Phase 1: Smooth Streaming)
+# Version: 3.5.2
 # Description: Manages the asynchronous API worker.
 #              Implements "Micro-Chunking" to smooth out network bursts.
 #
-# Change Log (v3.4.0):
-# - [UX] Added Python-side smoothing (chunk splitting + micro-sleeps) to prevent "blocky" text rendering.
-# - [UX] Optimized emission rate to target ~60Hz updates.
+# Change Log (v3.5.2):
+# - [Fix] Always emit 'finished' signal with partial content when stopped.
+#   This ensures partial responses are saved and copyable in the UI.
 
 import json
 import sys
@@ -45,10 +45,11 @@ class ApiWorker(QRunnable):
         self.messages = messages
         self.temperature = temperature
         self.signals = WorkerSignals()
-        self._is_running = True  # Flag to allow cancellation (Phase 2 prep)
+        self._is_running = True  # Flag to allow cancellation
 
     def stop(self):
         """Stops the worker gracefully."""
+        print("[WORKER] Stop requested.")
         self._is_running = False
 
     @pyqtSlot()
@@ -89,15 +90,7 @@ class ApiWorker(QRunnable):
                                 self.signals.first_token.emit()
                                 first_token_emitted = True
 
-                            # 2. Smooth Streaming Logic
-                            # Instead of emitting the whole 'content_part' (which might be a large buffered chunk),
-                            # we split it into tiny pieces and sleep briefly. This paces the UI updates.
-                            
-                            # Chunk size: 3 chars. 
-                            # Sleep: 0.01s (10ms).
-                            # Rate: ~100 emits/sec max. ~300 chars/sec.
-                            # This is fast enough to feel snappy, but slow enough to look smooth.
-                            
+                            # 2. Smooth Streaming Logic (Micro-Chunking)
                             chunk_size = 3
                             for i in range(0, len(content_part), chunk_size):
                                 if not self._is_running: break
@@ -106,7 +99,6 @@ class ApiWorker(QRunnable):
                                 self.signals.new_token.emit(sub_chunk)
                                 
                                 # Force a tiny pause to let the Qt Event Loop process the signal
-                                # and repaint the UI, preventing "batching".
                                 time.sleep(0.01)
                             
                             # 3. Store it for the final aggregation
@@ -123,8 +115,9 @@ class ApiWorker(QRunnable):
                 "choices": [{"message": {"content": full_response_content}}]
             }
             
-            if self._is_running:
-                self.signals.finished.emit(final_result)
+            # Change v3.5.2: Always emit finished, even if stopped.
+            # This ensures the Controller receives the partial text to update the data model.
+            self.signals.finished.emit(final_result)
 
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 429:
@@ -144,6 +137,10 @@ class ApiWorker(QRunnable):
                 self.signals.error.emit(error_message)
 
         except Exception as e:
+            # If stopped, we might catch a stream error (e.g. connection closed), but we should ignore it
+            if not self._is_running:
+                return
+
             error_message = (
                 f"<b>API Call Failed</b><br>"
                 f"Model: {self.model_id}<br>"

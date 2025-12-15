@@ -1,8 +1,6 @@
-<!-- chat_template.html for YaOG (yaog.py) -->
-<!-- Version: 3.4.0 (Phase 1: Smooth Streaming) -->
-<!-- Description: Frontend view supporting Real-Time Streaming & Thinking Indicator. -->
-<!-- Change Log (v3.4.0): -->
-<!-- - [Performance] Added requestAnimationFrame to throttle scrolling (decouples render from layout). -->
+<!-- chat_template.html for YaOG -->
+<!-- Version: 3.5.1 (Phase 2: User Control) -->
+<!-- Description: Frontend view supporting Real-Time Streaming, Thinking Indicator, and Copy Feedback. -->
 
 <!DOCTYPE html>
 <html>
@@ -87,6 +85,8 @@
             cursor: pointer;
             font-size: 12px;
             padding: 2px 8px;
+            min-width: 40px;
+            text-align: center;
             transition: all 0.2s;
         }
 
@@ -94,6 +94,12 @@
             background-color: #eee;
             color: #000;
             border-color: #999;
+        }
+        
+        .copy-btn.copied {
+            background-color: #e8f5e9;
+            border-color: #4caf50;
+            color: #2e7d32;
         }
 
         .content-body {
@@ -244,11 +250,24 @@
             const copyBtn = document.createElement('button');
             copyBtn.textContent = "Copy";
             copyBtn.classList.add('copy-btn');
+            
+            // Copy Feedback Logic
             copyBtn.onclick = function() {
                 if (backendProxy) {
                     backendProxy.copy_message(index);
+                    
+                    // Visual Feedback
+                    const originalText = "Copy";
+                    copyBtn.textContent = "✓";
+                    copyBtn.classList.add('copied');
+                    
+                    setTimeout(() => {
+                        copyBtn.textContent = originalText;
+                        copyBtn.classList.remove('copied');
+                    }, 2000);
                 }
             };
+            
             headerDiv.appendChild(copyBtn);
             messageDiv.appendChild(headerDiv);
 

@@ -1,11 +1,14 @@
 # YaOG -- Yet another Openrouter GUI
-# Version: 3.5.0 (Strict Refactor)
+# Version: 3.5.3 (Phase 2: User Control & Fixes)
 # Description: Main Application Logic.
 #
-# Change Log (v3.5.0):
-# - [Refactor] Split UI construction into ui_main_window.py.
-# - [Refactor] Split ChatBackend into chat_backend.py.
-# - [Compliance] File size strictly < 500 lines.
+# Change Log (v3.5.3):
+# - [Fix] Ctrl+C now exits cleanly without triggering the GUI confirmation dialog.
+# - [Fix] Added 'force_close' flag to bypass closeEvent logic during signal interrupts.
+#
+# Change Log (v3.5.2):
+# - [Fix] stop_generation() now relies on worker signals to finalize data.
+# - [Feature] Stop Generation button, Shortcuts, Close Confirmation.
 
 import sys
 import json
@@ -36,7 +39,7 @@ def main_application():
             QApplication, QMainWindow, QMessageBox, QListWidgetItem, QDialog, 
             QFileDialog, QFrame, QHBoxLayout, QLabel, QPushButton, QMenu, QInputDialog
         )
-        from PyQt6.QtCore import Qt, QThreadPool, pyqtSlot, QTimer
+        from PyQt6.QtCore import Qt, QThreadPool, pyqtSlot, QTimer, QEvent
         from PyQt6.QtGui import QAction, QFont
         from PyQt6.QtWebChannel import QWebChannel
         from PyQt6.QtWebEngineCore import QWebEngineProfile
@@ -44,10 +47,6 @@ def main_application():
         import markdown
 
         app = QApplication(sys.argv)
-
-        # Ctrl+C Handling
-        signal.signal(signal.SIGINT, lambda sig, frame: (QApplication.quit(), sys.exit(0)))
-        QTimer().start(100) # Keep interpreter active
 
         # WebEngine Profile
         profile = QWebEngineProfile.defaultProfile()
@@ -68,6 +67,11 @@ def main_application():
                 self.staged_files = [] 
                 self.is_web_ready = False
                 
+                # State for Stop/Send logic
+                self.worker = None
+                self.is_generating = False
+                self.force_close = False # Flag to bypass confirmation on Ctrl+C
+                
                 self.settings_manager = SettingsManager()
                 self.model_manager = ModelManager()
                 self.db_manager = DatabaseManager()
@@ -84,6 +88,9 @@ def main_application():
                 self._populate_system_prompts()
                 self._populate_models()
                 self._apply_ui_settings()
+                
+                # Install Event Filter for Shortcuts
+                self.input_box.installEventFilter(self)
 
             def _connect_signals(self):
                 self.new_chat_button.clicked.connect(self._new_chat)
@@ -103,6 +110,37 @@ def main_application():
                 self.channel = QWebChannel()
                 self.channel.registerObject("backend", self.chat_backend)
                 self.chat_view.page().setWebChannel(self.channel)
+
+            # --- Event Handling ---
+            def eventFilter(self, source, event):
+                if source == self.input_box and event.type() == QEvent.Type.KeyPress:
+                    if event.key() == Qt.Key.Key_Return and (event.modifiers() & Qt.KeyboardModifier.ControlModifier):
+                        self.send_message()
+                        return True
+                return super().eventFilter(source, event)
+
+            def closeEvent(self, event):
+                # If Ctrl+C was pressed, bypass all checks and close immediately
+                if self.force_close:
+                    event.accept()
+                    return
+
+                # Standard User "X" button logic
+                if self.is_generating:
+                    reply = QMessageBox.question(self, "Exit", "Generation in progress. Stop and exit?", 
+                                                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+                    if reply == QMessageBox.StandardButton.Yes:
+                        self.stop_generation()
+                        event.accept()
+                    else:
+                        event.ignore()
+                else:
+                    reply = QMessageBox.question(self, "Exit", "Are you sure you want to exit?", 
+                                                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+                    if reply == QMessageBox.StandardButton.Yes:
+                        event.accept()
+                    else:
+                        event.ignore()
 
             @pyqtSlot(str)
             def _append_log(self, text):
@@ -158,6 +196,7 @@ def main_application():
 
             @pyqtSlot()
             def _new_chat(self):
+                if self.is_generating: return
                 self.current_conversation_id = None
                 self.current_messages = []
                 self.staged_files = []
@@ -171,6 +210,12 @@ def main_application():
             # --- Chat Logic ---
             @pyqtSlot()
             def send_message(self):
+                # STOP LOGIC
+                if self.is_generating:
+                    self.stop_generation()
+                    return
+
+                # SEND LOGIC
                 user_text = self.input_box.toPlainText().strip()
                 if not user_text and not self.staged_files: return
                 if not self.api_manager.is_configured():
@@ -213,15 +258,28 @@ def main_application():
                 for f, _ in atts: html_txt += f'<span class="attachment-indicator">📎 {f}</span>'
                 self.chat_backend.message_added.emit(len(self.current_messages)-1, "user", html_txt, "You")
                 
-                self.input_box.clear(); self.set_ui_enabled(False); self._update_token_count()
+                self.input_box.clear(); self._set_ui_state_generating(); self._update_token_count()
                 self.chat_view.page().runJavaScript("showThinking();")
 
-                worker = ApiWorker(self.api_manager, model_id, self.current_messages, temp)
-                worker.signals.first_token.connect(lambda: self.chat_view.page().runJavaScript(f"start_message({len(self.current_messages)}, 'assistant', '{model_name}');"))
-                worker.signals.new_token.connect(self.chat_backend.stream_token)
-                worker.signals.finished.connect(self.finalize_message)
-                worker.signals.error.connect(self.handle_api_error)
-                self.threadpool.start(worker)
+                self.worker = ApiWorker(self.api_manager, model_id, self.current_messages, temp)
+                self.worker.signals.first_token.connect(lambda: self.chat_view.page().runJavaScript(f"start_message({len(self.current_messages)}, 'assistant', '{model_name}');"))
+                self.worker.signals.new_token.connect(self.chat_backend.stream_token)
+                self.worker.signals.finished.connect(self.finalize_message)
+                self.worker.signals.error.connect(self.handle_api_error)
+                self.threadpool.start(self.worker)
+
+            def stop_generation(self):
+                """
+                Signals the worker to stop.
+                We do NOT reset the UI state here immediately.
+                We wait for the worker to emit 'finished' (with partial content),
+                which triggers finalize_message() to handle data saving and UI reset.
+                """
+                if self.worker:
+                    self.worker.stop()
+                    self.send_button.setText("Stopping...")
+                    self.send_button.setEnabled(False)
+                    print("[INFO] Stop signal sent to worker.")
 
             @pyqtSlot(dict)
             def finalize_message(self, response):
@@ -236,19 +294,32 @@ def main_application():
                     self.chat_view.page().runJavaScript(f"finalize_message('{safe_html}');")
                     self._update_token_count()
                 except Exception as e: self.handle_api_error(str(e))
-                finally: self.set_ui_enabled(True)
+                finally: self._set_ui_state_idle()
 
             @pyqtSlot(str)
             def handle_api_error(self, msg):
                 self.chat_view.page().runJavaScript("removeThinking();")
-                self.set_ui_enabled(True)
+                self._set_ui_state_idle()
                 QMessageBox.critical(self, "API Error", msg)
 
             # --- Helpers ---
-            def set_ui_enabled(self, enabled):
-                self.send_button.setEnabled(enabled); self.input_box.setEnabled(enabled)
-                self.attach_btn.setEnabled(enabled); self.controls_dock.setEnabled(enabled)
-                self.send_button.setText("Send Message" if enabled else "Generating...")
+            def _set_ui_state_generating(self):
+                self.is_generating = True
+                self.send_button.setText("Stop")
+                self.send_button.setStyleSheet("background-color: #d32f2f; color: white; font-weight: bold;")
+                self.input_box.setEnabled(False)
+                self.attach_btn.setEnabled(False)
+                self.controls_dock.setEnabled(False)
+
+            def _set_ui_state_idle(self):
+                self.is_generating = False
+                self.send_button.setText("Send Message")
+                self.send_button.setStyleSheet("")
+                self.send_button.setEnabled(True)
+                self.input_box.setEnabled(True)
+                self.attach_btn.setEnabled(True)
+                self.controls_dock.setEnabled(True)
+                self.worker = None
 
             def _update_token_count(self):
                 self.token_label.setText(f"Context: ~{self.token_counter.count_tokens(self.current_messages):,} tokens")
@@ -266,6 +337,7 @@ def main_application():
 
             @pyqtSlot(QListWidgetItem)
             def _load_conversation(self, item):
+                if self.is_generating: return
                 cid = item.data(Qt.ItemDataRole.UserRole)
                 if cid == self.current_conversation_id: return
                 self.current_conversation_id = cid
@@ -351,6 +423,23 @@ def main_application():
                     l.addWidget(btn); self.staging_layout.addWidget(chip)
 
         window = MainWindow(log_stream.log_signal)
+        
+        # Robust Ctrl+C Handling
+        def signal_handler(sig, frame):
+            print("\n[INFO] Ctrl+C detected. Exiting cleanly...")
+            # Set flag to bypass close confirmation
+            window.force_close = True
+            
+            # Stop worker if running (best effort)
+            if window.worker:
+                window.worker.stop()
+            
+            # Quit the application loop
+            QApplication.quit()
+            
+        signal.signal(signal.SIGINT, signal_handler)
+        QTimer().start(100) # Keep interpreter active for signals
+
         window.showMaximized()
         sys.exit(app.exec())
 
