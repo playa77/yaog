@@ -5,8 +5,12 @@
       "id": "z-ai/glm-4.5-air:free"
     },
     {
-      "name": "Deepseek V3 (free)",
-      "id": "deepseek/deepseek-chat-v3-0324:free"
+      "name": "Gemini 2.5 Flash Lite",
+      "id": "google/gemini-2.5-flash-lite"
+    },
+    {
+      "name": "Grok 4.1 Fast",
+      "id": "x-ai/grok-4.1-fast"
     },
     {
       "name": "Deepseek R1 (free)",
@@ -17,16 +21,12 @@
       "id": "moonshotai/kimi-k2:free"
     },
     {
+      "name": "Deepseek V3 (free)",
+      "id": "deepseek/deepseek-chat-v3-0324:free"
+    },
+    {
       "name": "Gemini 2.0 Flash (free)",
       "id": "google/gemini-2.0-flash-exp:free"
-    },
-    {
-      "name": "Gemini 2.0 Flash Lite",
-      "id": "google/gemini-2.0-flash-lite-001"
-    },
-    {
-      "name": "Grok 4.1 Fast (free until dec 3rd)",
-      "id": "x-ai/grok-4.1-fast"
     },
     {
       "name": "Qwen3 (free)",

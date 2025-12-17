@@ -1,6 +1,6 @@
 <!-- chat_template.html for YaOG -->
-<!-- Version: 3.5.1 (Phase 2: User Control) -->
-<!-- Description: Frontend view supporting Real-Time Streaming, Thinking Indicator, and Copy Feedback. -->
+<!-- Version: 3.5.3 (Phase 3: Model Management) -->
+<!-- Description: Frontend view. Removed left border from bubbles. -->
 
 <!DOCTYPE html>
 <html>
@@ -36,14 +36,12 @@
 
         .user {
             background-color: #e3f2fd; /* Light Blue */
-            border-left: 4px solid #2196F3;
             align-self: flex-end;
             color: #000000;
         }
 
         .assistant {
             background-color: #f5f5f5; /* Light Grey */
-            border-left: 4px solid #9e9e9e;
             align-self: flex-start;
             color: #000000;
         }
@@ -51,7 +49,6 @@
         /* Thinking Indicator Styling */
         .thinking {
             background-color: #f0f0f0;
-            border-left: 4px solid #ccc;
             align-self: flex-start;
             color: #666;
             font-style: italic;
@@ -149,8 +146,8 @@
 
     <script>
         let backendProxy = null;
-        let currentContentDiv = null; // Tracks the div currently receiving stream data
-        let isScrolling = false;      // Lock for scroll throttling
+        let currentContentDiv = null;
+        let isScrolling = false;
 
         function clearChat() {
             const chatContainer = document.getElementById('chat-container');
@@ -165,54 +162,39 @@
         document.addEventListener("DOMContentLoaded", function() {
             new QWebChannel(qt.webChannelTransport, function(channel) {
                 backendProxy = channel.objects.backend;
-                // Connect signals
                 backendProxy.message_added.connect(appendFullMessage);
                 backendProxy.token_received.connect(appendToken);
             });
         });
 
-        // --- Legacy/History Loading (Full Message) ---
         function appendFullMessage(index, role, content, modelName) {
             createMessageBubble(index, role, modelName, content, true);
         }
 
-        // --- Thinking Indicator Logic ---
         function showThinking() {
-            removeThinking(); // Prevent duplicates
+            removeThinking();
             const chatContainer = document.getElementById('chat-container');
-            
             const thinkingDiv = document.createElement('div');
             thinkingDiv.id = 'thinking-indicator';
             thinkingDiv.classList.add('message', 'thinking');
             thinkingDiv.textContent = "Thinking...";
-            
             chatContainer.appendChild(thinkingDiv);
             window.scrollTo(0, document.body.scrollHeight);
         }
 
         function removeThinking() {
             const thinkingDiv = document.getElementById('thinking-indicator');
-            if (thinkingDiv) {
-                thinkingDiv.remove();
-            }
+            if (thinkingDiv) thinkingDiv.remove();
         }
 
-        // --- Streaming Logic ---
-
-        // 1. Called by Python when first token arrives (replaces Thinking)
         function start_message(index, role, modelName) {
             removeThinking();
-            // Create an empty bubble
             createMessageBubble(index, role, modelName, "", false);
         }
 
-        // 2. Called by Python via Signal for every token
         function appendToken(text) {
             if (currentContentDiv) {
-                // We use createTextNode to safely escape HTML special chars during streaming
                 currentContentDiv.appendChild(document.createTextNode(text));
-                
-                // Throttle scrolling to the refresh rate to avoid layout thrashing
                 if (!isScrolling) {
                     isScrolling = true;
                     window.requestAnimationFrame(() => {
@@ -223,23 +205,19 @@
             }
         }
 
-        // 3. Called by Python when stream ends (replaces raw text with Markdown HTML)
         function finalize_message(htmlContent) {
             if (currentContentDiv) {
                 currentContentDiv.innerHTML = htmlContent;
                 window.scrollTo(0, document.body.scrollHeight);
-                currentContentDiv = null; // Reset
+                currentContentDiv = null;
             }
         }
 
-        // Helper to create the DOM structure
         function createMessageBubble(index, role, modelName, initialContent, isFinal) {
             const chatContainer = document.getElementById('chat-container');
-
             const messageDiv = document.createElement('div');
             messageDiv.classList.add('message', role);
 
-            // Header
             const headerDiv = document.createElement('div');
             headerDiv.classList.add('message-header');
 
@@ -251,16 +229,12 @@
             copyBtn.textContent = "Copy";
             copyBtn.classList.add('copy-btn');
             
-            // Copy Feedback Logic
             copyBtn.onclick = function() {
                 if (backendProxy) {
                     backendProxy.copy_message(index);
-                    
-                    // Visual Feedback
                     const originalText = "Copy";
                     copyBtn.textContent = "✓";
                     copyBtn.classList.add('copied');
-                    
                     setTimeout(() => {
                         copyBtn.textContent = originalText;
                         copyBtn.classList.remove('copied');
@@ -271,7 +245,6 @@
             headerDiv.appendChild(copyBtn);
             messageDiv.appendChild(headerDiv);
 
-            // Content
             const contentDiv = document.createElement('div');
             contentDiv.classList.add('content-body');
             
@@ -279,7 +252,7 @@
                 contentDiv.innerHTML = initialContent;
             } else {
                 contentDiv.textContent = initialContent;
-                currentContentDiv = contentDiv; // Set as active target for streaming
+                currentContentDiv = contentDiv;
             }
             
             messageDiv.appendChild(contentDiv);
@@ -287,6 +260,5 @@
             window.scrollTo(0, document.body.scrollHeight);
         }
     </script>
-
 </body>
 </html>

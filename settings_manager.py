@@ -1,9 +1,6 @@
 # settings_manager.py for YaOG (yaog.py)
-# Version: 1.2
+# Version: 3.5.3 (Phase 3: Model Management)
 # Description: Manages application-wide settings and Model configurations.
-#
-# Change Log (v1.2):
-# - Added ModelManager class to handle models.json CRUD.
 
 import json
 import sys
@@ -61,7 +58,6 @@ class ModelManager:
 
     def load(self):
         if not self.filepath.exists():
-            # Defaults are handled by utils.setup_project_files, but just in case:
             self.models = []
             return
         try:
@@ -85,11 +81,9 @@ class ModelManager:
         return self.models
 
     def add_model(self, name, model_id):
-        # Check for duplicates
         for m in self.models:
             if m['id'] == model_id:
                 return False
-        
         self.models.append({"name": name, "id": model_id})
         self.save()
         return True
@@ -104,6 +98,20 @@ class ModelManager:
     def delete_model(self, index):
         if 0 <= index < len(self.models):
             self.models.pop(index)
+            self.save()
+            return True
+        return False
+
+    def move_up(self, index):
+        if index > 0 and index < len(self.models):
+            self.models[index], self.models[index-1] = self.models[index-1], self.models[index]
+            self.save()
+            return True
+        return False
+
+    def move_down(self, index):
+        if index >= 0 and index < len(self.models) - 1:
+            self.models[index], self.models[index+1] = self.models[index+1], self.models[index]
             self.save()
             return True
         return False

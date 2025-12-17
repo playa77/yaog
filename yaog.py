@@ -1,14 +1,5 @@
-# YaOG -- Yet another Openrouter GUI
-# Version: 3.5.3 (Phase 2: User Control & Fixes)
-# Description: Main Application Logic.
-#
-# Change Log (v3.5.3):
-# - [Fix] Ctrl+C now exits cleanly without triggering the GUI confirmation dialog.
-# - [Fix] Added 'force_close' flag to bypass closeEvent logic during signal interrupts.
-#
-# Change Log (v3.5.2):
-# - [Fix] stop_generation() now relies on worker signals to finalize data.
-# - [Feature] Stop Generation button, Shortcuts, Close Confirmation.
+# Script Version: 3.5.5 | Last Updated: 2025-12-17
+# Description: Main Application Logic with fixed capabilities detection.
 
 import sys
 import json
@@ -29,7 +20,6 @@ from chat_backend import ChatBackend
 sys.excepthook = crash_handler
 
 def main_application():
-    # Linux WebEngine Fixes
     if sys.platform == "linux":
         if '--no-sandbox' not in sys.argv: sys.argv.append('--no-sandbox')
         if '--disable-gpu' not in sys.argv: sys.argv.append('--disable-gpu')
@@ -47,8 +37,6 @@ def main_application():
         import markdown
 
         app = QApplication(sys.argv)
-
-        # WebEngine Profile
         profile = QWebEngineProfile.defaultProfile()
         profile.setHttpCacheType(QWebEngineProfile.HttpCacheType.MemoryHttpCache)
         profile.setPersistentCookiesPolicy(QWebEngineProfile.PersistentCookiesPolicy.NoPersistentCookies)
@@ -60,17 +48,16 @@ def main_application():
         class MainWindow(QMainWindow, MainWindowUI):
             def __init__(self, log_signal):
                 super().__init__()
-                self.setup_ui(self) # From MainWindowUI mixin
+                self.setup_ui(self)
                 
                 self.current_messages = []
                 self.current_conversation_id = None
                 self.staged_files = [] 
                 self.is_web_ready = False
-                
-                # State for Stop/Send logic
                 self.worker = None
                 self.is_generating = False
-                self.force_close = False # Flag to bypass confirmation on Ctrl+C
+                self.force_close = False
+                self.model_metadata = {} 
                 
                 self.settings_manager = SettingsManager()
                 self.model_manager = ModelManager()
@@ -89,8 +76,8 @@ def main_application():
                 self._populate_models()
                 self._apply_ui_settings()
                 
-                # Install Event Filter for Shortcuts
                 self.input_box.installEventFilter(self)
+                self.threadpool.start(self._fetch_and_cache_models)
 
             def _connect_signals(self):
                 self.new_chat_button.clicked.connect(self._new_chat)
@@ -104,6 +91,7 @@ def main_application():
                 self.attach_btn.clicked.connect(self._attach_file)
                 self.send_button.clicked.connect(self.send_message)
                 self.chat_view.loadFinished.connect(self._on_page_load_finished)
+                self.model_combo.currentIndexChanged.connect(self._on_model_changed)
 
             def _setup_web_channel(self):
                 self.chat_backend = ChatBackend(self)
@@ -111,7 +99,6 @@ def main_application():
                 self.channel.registerObject("backend", self.chat_backend)
                 self.chat_view.page().setWebChannel(self.channel)
 
-            # --- Event Handling ---
             def eventFilter(self, source, event):
                 if source == self.input_box and event.type() == QEvent.Type.KeyPress:
                     if event.key() == Qt.Key.Key_Return and (event.modifiers() & Qt.KeyboardModifier.ControlModifier):
@@ -120,27 +107,18 @@ def main_application():
                 return super().eventFilter(source, event)
 
             def closeEvent(self, event):
-                # If Ctrl+C was pressed, bypass all checks and close immediately
                 if self.force_close:
                     event.accept()
                     return
-
-                # Standard User "X" button logic
                 if self.is_generating:
-                    reply = QMessageBox.question(self, "Exit", "Generation in progress. Stop and exit?", 
-                                                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
-                    if reply == QMessageBox.StandardButton.Yes:
+                    if QMessageBox.question(self, "Exit", "Stop generation and exit?", QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No) == QMessageBox.StandardButton.Yes:
                         self.stop_generation()
                         event.accept()
-                    else:
-                        event.ignore()
+                    else: event.ignore()
                 else:
-                    reply = QMessageBox.question(self, "Exit", "Are you sure you want to exit?", 
-                                                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
-                    if reply == QMessageBox.StandardButton.Yes:
+                    if QMessageBox.question(self, "Exit", "Exit application?", QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No) == QMessageBox.StandardButton.Yes:
                         event.accept()
-                    else:
-                        event.ignore()
+                    else: event.ignore()
 
             @pyqtSlot(str)
             def _append_log(self, text):
@@ -159,10 +137,43 @@ def main_application():
                 self.history_list.setFont(font)
                 if self.is_web_ready: self.chat_view.page().runJavaScript(f"setFontSize('{font_size}px');")
 
-            # --- Data Population ---
             def _populate_models(self):
                 self.model_combo.clear()
                 for m in self.model_manager.get_all(): self.model_combo.addItem(m.get("name"), m.get("id"))
+                self._on_model_changed()
+
+            def _fetch_and_cache_models(self):
+                models = self.api_manager.fetch_models()
+                for m in models:
+                    self.model_metadata[m['id']] = m
+
+            def _on_model_changed(self):
+                mid = self.model_combo.currentData()
+                if not mid: return
+                
+                meta = self.model_metadata.get(mid, {})
+                ctx = meta.get('context_length', 'Unknown')
+                pricing = meta.get('pricing', {})
+                prompt_price = pricing.get('prompt', 'Unknown')
+                
+                tooltip = f"ID: {mid}\nContext: {ctx}\nPrompt Price: {prompt_price}"
+                self.model_combo.setToolTip(tooltip)
+                
+                # Capabilities Detection
+                supported_params = meta.get("supported_parameters", [])
+                
+                # Reasoning Support
+                if "include_reasoning" in supported_params:
+                    self.chk_reasoning.setEnabled(True)
+                else:
+                    self.chk_reasoning.setChecked(False)
+                    self.chk_reasoning.setEnabled(False)
+                
+                # Web Search Logic
+                if mid.endswith(":online"):
+                    self.chk_web_search.setChecked(True)
+                else:
+                    self.chk_web_search.setChecked(False)
 
             def _populate_history_list(self):
                 self.history_list.clear()
@@ -180,7 +191,6 @@ def main_application():
                 idx = self.sys_prompt_combo.findData(cur)
                 if idx >= 0: self.sys_prompt_combo.setCurrentIndex(idx)
 
-            # --- Actions ---
             @pyqtSlot()
             def _open_settings(self):
                 if SettingsDialog(self.settings_manager, self.model_manager, self.db_manager, self).exec():
@@ -207,15 +217,12 @@ def main_application():
                 self.sys_prompt_combo.setEnabled(True)
                 self._update_token_count()
 
-            # --- Chat Logic ---
             @pyqtSlot()
             def send_message(self):
-                # STOP LOGIC
                 if self.is_generating:
                     self.stop_generation()
                     return
 
-                # SEND LOGIC
                 user_text = self.input_box.toPlainText().strip()
                 if not user_text and not self.staged_files: return
                 if not self.api_manager.is_configured():
@@ -226,14 +233,24 @@ def main_application():
                 temp = self.temp_slider.value() / 100.0
                 sys_prompt = self.sys_prompt_combo.currentData()
 
-                # System Prompt Logic
+                # Web Search Toggle
+                if self.chk_web_search.isChecked():
+                    if not model_id.endswith(":online"):
+                        model_id += ":online"
+                else:
+                    if model_id.endswith(":online"):
+                        model_id = model_id.replace(":online", "")
+
+                extra_params = {}
+                if self.chk_reasoning.isChecked() and self.chk_reasoning.isEnabled():
+                    extra_params["include_reasoning"] = True
+
                 if self.current_messages and self.current_messages[0]['role'] == 'system':
                     if sys_prompt: self.current_messages[0]['content'] = sys_prompt
                     else: self.current_messages.pop(0)
                 elif sys_prompt:
                     self.current_messages.insert(0, {"role": "system", "content": sys_prompt})
 
-                # Attachments
                 full_content = user_text
                 for fpath in self.staged_files:
                     try:
@@ -241,7 +258,6 @@ def main_application():
                     except Exception as e: return QMessageBox.warning(self, "Error", str(e))
                 self.staged_files = []; self._update_staging_area()
 
-                # New Conversation
                 if self.current_conversation_id is None:
                     title = (user_text[:40] + "...") if len(user_text) > 40 else (user_text or "Attachment")
                     self.current_conversation_id = self.db_manager.add_conversation(title)
@@ -252,7 +268,6 @@ def main_application():
                 self.db_manager.add_message(self.current_conversation_id, "user", full_content, None, None)
                 self.current_messages.append({"role": "user", "content": full_content})
                 
-                # Render User Msg
                 clean, atts = FileExtractor.strip_attachments_for_ui(full_content)
                 html_txt = markdown.markdown(clean, extensions=['fenced_code', 'tables']) if self.chk_markdown.isChecked() else html.escape(clean)
                 for f, _ in atts: html_txt += f'<span class="attachment-indicator">📎 {f}</span>'
@@ -261,7 +276,7 @@ def main_application():
                 self.input_box.clear(); self._set_ui_state_generating(); self._update_token_count()
                 self.chat_view.page().runJavaScript("showThinking();")
 
-                self.worker = ApiWorker(self.api_manager, model_id, self.current_messages, temp)
+                self.worker = ApiWorker(self.api_manager, model_id, self.current_messages, temp, extra_params)
                 self.worker.signals.first_token.connect(lambda: self.chat_view.page().runJavaScript(f"start_message({len(self.current_messages)}, 'assistant', '{model_name}');"))
                 self.worker.signals.new_token.connect(self.chat_backend.stream_token)
                 self.worker.signals.finished.connect(self.finalize_message)
@@ -269,17 +284,10 @@ def main_application():
                 self.threadpool.start(self.worker)
 
             def stop_generation(self):
-                """
-                Signals the worker to stop.
-                We do NOT reset the UI state here immediately.
-                We wait for the worker to emit 'finished' (with partial content),
-                which triggers finalize_message() to handle data saving and UI reset.
-                """
                 if self.worker:
                     self.worker.stop()
                     self.send_button.setText("Stopping...")
                     self.send_button.setEnabled(False)
-                    print("[INFO] Stop signal sent to worker.")
 
             @pyqtSlot(dict)
             def finalize_message(self, response):
@@ -302,7 +310,6 @@ def main_application():
                 self._set_ui_state_idle()
                 QMessageBox.critical(self, "API Error", msg)
 
-            # --- Helpers ---
             def _set_ui_state_generating(self):
                 self.is_generating = True
                 self.send_button.setText("Stop")
@@ -424,21 +431,14 @@ def main_application():
 
         window = MainWindow(log_stream.log_signal)
         
-        # Robust Ctrl+C Handling
         def signal_handler(sig, frame):
             print("\n[INFO] Ctrl+C detected. Exiting cleanly...")
-            # Set flag to bypass close confirmation
             window.force_close = True
-            
-            # Stop worker if running (best effort)
-            if window.worker:
-                window.worker.stop()
-            
-            # Quit the application loop
+            if window.worker: window.worker.stop()
             QApplication.quit()
             
         signal.signal(signal.SIGINT, signal_handler)
-        QTimer().start(100) # Keep interpreter active for signals
+        QTimer().start(100)
 
         window.showMaximized()
         sys.exit(app.exec())

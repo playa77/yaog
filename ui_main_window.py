@@ -1,5 +1,5 @@
 # ui_main_window.py for YaOG
-# Version: 3.5.0
+# Version: 3.5.3 (Phase 3: Model Management)
 # Description: Handles the visual construction of the Main Window.
 
 from PyQt6.QtWidgets import (
@@ -94,8 +94,15 @@ class MainWindowUI:
         mw.chk_markdown.setChecked(True)
         controls_layout.addWidget(mw.chk_markdown)
         
-        mw.chk_web_search = QCheckBox("Web Search")
+        # Phase 3: Capabilities Checkboxes
+        mw.chk_web_search = QCheckBox("Web Search (:online)")
+        mw.chk_web_search.setToolTip("Appends ':online' to model ID to force web search.")
         controls_layout.addWidget(mw.chk_web_search)
+
+        mw.chk_reasoning = QCheckBox("Reasoning")
+        mw.chk_reasoning.setToolTip("Requests 'include_reasoning' parameter for supported models.")
+        controls_layout.addWidget(mw.chk_reasoning)
+        
         controls_layout.addSpacing(20)
 
         mw.btn_settings = QPushButton("Settings")
@@ -121,7 +128,6 @@ class MainWindowUI:
         splitter = QSplitter(Qt.Orientation.Vertical)
         
         mw.chat_view = QWebEngineView()
-        # Load initial HTML
         html_path = resource_path("chat_template.html")
         mw.chat_view.setUrl(QUrl.fromLocalFile(html_path))
         splitter.addWidget(mw.chat_view)
