@@ -1,5 +1,5 @@
 # ui_main_window.py for YaOG
-# Version: 3.5.3 (Phase 3: Model Management)
+# Version: 4.1.3 (Final Polish)
 # Description: Handles the visual construction of the Main Window.
 
 from PyQt6.QtWidgets import (
@@ -18,7 +18,8 @@ class MainWindowUI:
     Mixin class that handles the UI setup for the MainWindow.
     """
     def setup_ui(self, main_window):
-        main_window.setWindowTitle("YaOG (v3.5)")
+        # UPDATED: Version number to match main script
+        main_window.setWindowTitle("YaOG (v4.1.3)")
         main_window.setGeometry(100, 100, 1400, 900)
         
         self._create_docks(main_window)
