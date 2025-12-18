@@ -1,93 +1,64 @@
-# YaOG - Yet another Openrouter GUI
+# YaOG (Yet Another OpenRouter GUI)
 
-YaOG is a standalone, lightweight Linux desktop client for the OpenRouter.ai API, built using Python and PyQt6. It provides a persistent, customizable chat interface with support for multiple models, file attachments, system prompts, and local data management.
+YaOG is a lightweight, feature-rich desktop client for the OpenRouter API, built with Python and PyQt6. It provides a robust interface for interacting with various LLMs, managing conversation history locally, and handling complex workflows like branching conversations and file analysis.
 
 ## Features
 
-**Core Chat Functionality**
-*   **Multi-Model Support:** Seamlessly switch between different LLMs (e.g., Mistral, Gemini, DeepSeek) within the same application.
-*   **Markdown Rendering:** Chat output supports full Markdown rendering, including syntax highlighting for code blocks and tables.
-*   **Streaming Responses:** Real-time text generation feedback.
-*   **Token Counting:** Real-time estimation of context token usage using tiktoken.
+### Core Functionality
+*   **OpenRouter Integration:** Connects to OpenRouter.ai to access a wide range of LLMs (commercial and open-source).
+*   **Streaming Responses:** Real-time text generation with visual feedback.
+*   **Local Storage:** All conversations and system prompts are stored locally in an SQLite database (~/.or-client/or-client.db).
+*   **Markdown Rendering:** Full Markdown support with syntax highlighting for code blocks and table rendering.
 
-**Data & Persistence**
-*   **Local Database:** All conversations and messages are automatically saved to a local SQLite database (~/.or-client/or-client.db).
-*   **History Management:** Rename and delete saved conversations via the sidebar.
-*   **Import/Export:** Export specific conversations or system prompts to JSON for backup or sharing. Import them back into the application via the context menu.
+### Conversation Management
+*   **History:** Sidebar access to all past conversations, sorted by date.
+*   **Branching & Editing:** Edit any user message to create a new branch from that point (pruning future messages).
+*   **Pruning:** Delete a specific message and all subsequent messages to restart a conversation flow.
+*   **Regeneration:** One-click regeneration of the last Assistant response.
+*   **Import/Export:** Export conversations to JSON for backup or sharing; import them back into the application.
 
-**Context & Attachments**
-*   **File Attachments:** Attach text-based files (Code, Logs, Markdown, CSV) and PDF documents to the chat context. The application automatically extracts text from these files.
-*   **System Prompts:** Create, save, and manage custom system instructions (personas) to guide the AI's behavior.
+### Model & Prompt Management
+*   **Custom Model List:** Manage your preferred models via a dedicated settings tab. Supports adding, editing, reordering, and deleting models.
+*   **System Prompts:** Create, save, and manage reusable System Prompts (Personas). Inject them dynamically into new or existing chats.
+*   **Capabilities:** Toggles for specific OpenRouter features like Web Search (:online) and Reasoning (include_reasoning).
 
-**Configuration**
-*   **GUI Settings:** Manage API keys, timeouts, and font sizes directly through the application interface.
-*   **Model Manager:** Add, edit, or remove available models via the Settings dialog without editing configuration files manually.
+### File Attachments & Context
+*   **File Analysis:** Attach text-based files (code, logs, CSV, Markdown) and PDFs.
+*   **Context Awareness:** The application extracts text from attachments and formats them for the LLM.
+*   **Token Counting:** Real-time estimation of context token usage (requires tiktoken).
 
-## Prerequisites
+## Installation and Usage
 
-*   **Linux OS**
-*   **Python 3.10+**
-*   **OpenRouter API Key:** You need a valid API key from openrouter.ai.
+### Running the Released Executable (Linux Only)
+1.  Download the latest `YaOG` binary from the GitHub Releases page.
+2.  Open your terminal and navigate to the directory where you downloaded the file.
+3.  Make the file executable by running:
+    ```bash
+    chmod +x YaOG
+    ```
+4.  Run the application:
+    ```bash
+    ./YaOG
+    ```
+5.  On first launch, the application will create a `.env` file and a `models.json` in the same directory.
+6.  Go to **Settings**, enter your OpenRouter API Key, and save.
 
-## Installation
-
-1.  **Clone or Download the Repository**
-    Ensure all source files (yaog.py, api_manager.py, database_manager.py, settings_manager.py, worker_manager.py, utils.py, chat_template.html) are in the same directory.
-
-2.  **Create a Virtual Environment (Recommended)**
-
-    python -m venv venv
-    source venv/bin/activate
-
-3.  **Install Dependencies**
-    Use the provided requirements.txt file:
-
+### Running from Source
+1.  Clone the repository.
+2.  Install the required dependencies:
+    ```bash
     pip install -r requirements.txt
-
-    Dependencies include: PyQt6, PyQt6-WebEngine, httpx, python-dotenv, pymupdf, markdown, tiktoken.
-
-## Configuration
-
-Upon the first launch, YaOG will automatically generate the necessary configuration files if they are missing:
-
-*   .env: Stores your API Key.
-*   models.json: Stores the list of available models.
-*   settings.json: Stores UI preferences (font size, timeout).
-
-### Setting the API Key
-1.  Launch the application.
-2.  Click the **Settings** button in the bottom right.
-3.  Navigate to the **API & Network** tab.
-4.  Enter your OpenRouter API Key and click **Update API Key**.
-
-## Usage
-
-### Running the Application
-
+    ```
+3.  Run the application:
+    ```bash
     python yaog.py
+    ```
 
-### Managing Chats
-*   **New Chat:** Click the "New Chat" button in the top left.
-*   **Load Chat:** Click any item in the "Saved Conversations" list.
-*   **Context Menu:** Right-click on a chat in the list to **Rename**, **Delete**, or **Export** it.
-*   **Import Chat:** Right-click anywhere in the "Saved Conversations" list area and select **Import Chat (JSON)**.
-
-### Managing Models
-1.  Go to **Settings > Models**.
-2.  Use the **Add**, **Edit**, or **Delete** buttons to configure which models appear in the main dropdown.
-3.  You will need the specific Model ID string from OpenRouter (e.g., mistralai/mistral-7b-instruct:free).
-
-### File Attachments
-Click the **Attach** button next to the input box to select files. Supported formats include PDF, TXT, MD, PY, JS, HTML, JSON, CSV, and logs. The content of the files is extracted and appended to your message.
-
-## Troubleshooting
-
-**WebEngine Issues**
-If the application crashes or displays a blank white screen, it may be due to GPU acceleration issues with QtWebEngine on certain Linux configurations. The application attempts to handle this automatically by passing --no-sandbox and --disable-gpu arguments on startup.
-
-**Missing Files**
-If chat_template.html is missing, the chat view will not load. Ensure this file exists in the root directory.
+## Technical Details
+*   **Backend:** Python 3 (PyQt6)
+*   **Frontend:** QWebEngineView (HTML/CSS/JavaScript)
+*   **Database:** SQLite
+*   **Communication:** QWebChannel (bridging Python signals and JavaScript)
 
 ## License
-
-This project is provided as-is for educational and personal use.
+This project is licensed under the MIT License. See the LICENSE file for details.

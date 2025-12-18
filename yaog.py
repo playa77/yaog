@@ -1,5 +1,5 @@
-# Script Version: 3.5.5 | Last Updated: 2025-12-17
-# Description: Main Application Logic with fixed capabilities detection.
+# Script Version: 4.1.3 | Last Updated: 2025-12-18
+# Description: Main Application Logic. Fixed stuck thinking bubble on Stop.
 
 import sys
 import json
@@ -11,7 +11,8 @@ from pathlib import Path
 from api_manager import ApiManager
 from database_manager import DatabaseManager
 from settings_manager import SettingsManager, ModelManager
-from utils import crash_handler, setup_project_files, LogStream, FileExtractor, TokenCounter
+from conversation_manager import ConversationManager
+from utils import crash_handler, setup_project_files, LogStream, FileExtractor
 from worker_manager import ApiWorker
 from ui_dialogs import SettingsDialog, SystemPromptDialog
 from ui_main_window import MainWindowUI
@@ -26,11 +27,11 @@ def main_application():
 
     try:
         from PyQt6.QtWidgets import (
-            QApplication, QMainWindow, QMessageBox, QListWidgetItem, QDialog, 
-            QFileDialog, QFrame, QHBoxLayout, QLabel, QPushButton, QMenu, QInputDialog
+            QApplication, QMainWindow, QMessageBox, QListWidgetItem, QMenu, QInputDialog,
+            QFileDialog, QFrame, QHBoxLayout, QLabel, QPushButton
         )
         from PyQt6.QtCore import Qt, QThreadPool, pyqtSlot, QTimer, QEvent
-        from PyQt6.QtGui import QAction, QFont
+        from PyQt6.QtGui import QFont
         from PyQt6.QtWebChannel import QWebChannel
         from PyQt6.QtWebEngineCore import QWebEngineProfile
         from dotenv import load_dotenv
@@ -50,22 +51,20 @@ def main_application():
                 super().__init__()
                 self.setup_ui(self)
                 
-                self.current_messages = []
-                self.current_conversation_id = None
-                self.staged_files = [] 
-                self.is_web_ready = False
-                self.worker = None
-                self.is_generating = False
-                self.force_close = False
-                self.model_metadata = {} 
-                
+                # Managers
                 self.settings_manager = SettingsManager()
                 self.model_manager = ModelManager()
                 self.db_manager = DatabaseManager()
                 self.api_manager = ApiManager(timeout=self.settings_manager.get("api_timeout"))
+                self.conv_manager = ConversationManager(self.db_manager)
                 
+                # State
+                self.worker = None
+                self.is_generating = False
+                self.force_close = False
+                self.is_web_ready = False
+                self.model_metadata = {} 
                 self.threadpool = QThreadPool()
-                self.token_counter = TokenCounter()
 
                 log_signal.connect(self._append_log)
                 self._connect_signals()
@@ -95,6 +94,9 @@ def main_application():
 
             def _setup_web_channel(self):
                 self.chat_backend = ChatBackend(self)
+                self.chat_backend.edit_requested.connect(self._handle_edit_request)
+                self.chat_backend.regenerate_requested.connect(self._handle_regenerate_request)
+                self.chat_backend.delete_requested.connect(self._handle_delete_request)
                 self.channel = QWebChannel()
                 self.channel.registerObject("backend", self.chat_backend)
                 self.chat_view.page().setWebChannel(self.channel)
@@ -107,18 +109,17 @@ def main_application():
                 return super().eventFilter(source, event)
 
             def closeEvent(self, event):
-                if self.force_close:
-                    event.accept()
-                    return
+                if self.force_close: event.accept(); return
+                
                 if self.is_generating:
-                    if QMessageBox.question(self, "Exit", "Stop generation and exit?", QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No) == QMessageBox.StandardButton.Yes:
-                        self.stop_generation()
-                        event.accept()
+                    if QMessageBox.question(self, "Exit", "Stop generation?", QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No) == QMessageBox.StandardButton.Yes:
+                        self.stop_generation(); event.accept()
                     else: event.ignore()
                 else:
                     if QMessageBox.question(self, "Exit", "Exit application?", QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No) == QMessageBox.StandardButton.Yes:
                         event.accept()
-                    else: event.ignore()
+                    else:
+                        event.ignore()
 
             @pyqtSlot(str)
             def _append_log(self, text):
@@ -135,7 +136,8 @@ def main_application():
                 font = QFont(); font.setPixelSize(font_size)
                 self.input_box.setFont(font)
                 self.history_list.setFont(font)
-                if self.is_web_ready: self.chat_view.page().runJavaScript(f"setFontSize('{font_size}px');")
+                if self.is_web_ready:
+                    self.chat_view.page().runJavaScript(f"setFontSize('{font_size}px');")
 
             def _populate_models(self):
                 self.model_combo.clear()
@@ -144,36 +146,18 @@ def main_application():
 
             def _fetch_and_cache_models(self):
                 models = self.api_manager.fetch_models()
-                for m in models:
-                    self.model_metadata[m['id']] = m
+                for m in models: self.model_metadata[m['id']] = m
 
             def _on_model_changed(self):
                 mid = self.model_combo.currentData()
                 if not mid: return
-                
                 meta = self.model_metadata.get(mid, {})
-                ctx = meta.get('context_length', 'Unknown')
-                pricing = meta.get('pricing', {})
-                prompt_price = pricing.get('prompt', 'Unknown')
                 
-                tooltip = f"ID: {mid}\nContext: {ctx}\nPrompt Price: {prompt_price}"
-                self.model_combo.setToolTip(tooltip)
-                
-                # Capabilities Detection
-                supported_params = meta.get("supported_parameters", [])
-                
-                # Reasoning Support
-                if "include_reasoning" in supported_params:
-                    self.chk_reasoning.setEnabled(True)
-                else:
-                    self.chk_reasoning.setChecked(False)
-                    self.chk_reasoning.setEnabled(False)
-                
-                # Web Search Logic
-                if mid.endswith(":online"):
-                    self.chk_web_search.setChecked(True)
-                else:
-                    self.chk_web_search.setChecked(False)
+                # Capabilities
+                supported = meta.get("supported_parameters", [])
+                self.chk_reasoning.setEnabled("include_reasoning" in supported)
+                if not self.chk_reasoning.isEnabled(): self.chk_reasoning.setChecked(False)
+                self.chk_web_search.setChecked(mid.endswith(":online"))
 
             def _populate_history_list(self):
                 self.history_list.clear()
@@ -207,9 +191,7 @@ def main_application():
             @pyqtSlot()
             def _new_chat(self):
                 if self.is_generating: return
-                self.current_conversation_id = None
-                self.current_messages = []
-                self.staged_files = []
+                self.conv_manager.new_conversation()
                 self._update_staging_area()
                 self.input_box.clear()
                 self.history_list.clearSelection()
@@ -219,96 +201,117 @@ def main_application():
 
             @pyqtSlot()
             def send_message(self):
-                if self.is_generating:
-                    self.stop_generation()
-                    return
-
+                if self.is_generating: self.stop_generation(); return
                 user_text = self.input_box.toPlainText().strip()
-                if not user_text and not self.staged_files: return
-                if not self.api_manager.is_configured():
-                    return QMessageBox.warning(self, "Error", "API Key missing.")
+                if not user_text and not self.conv_manager.staged_files: return
+                if not self.api_manager.is_configured(): return QMessageBox.warning(self, "Error", "API Key missing.")
 
+                # Handle System Prompt
+                sys_prompt = self.sys_prompt_combo.currentData()
+                msgs = self.conv_manager.messages
+                
+                if msgs and msgs[0]['role'] == 'system':
+                    if sys_prompt: 
+                        self.conv_manager.update_message(0, sys_prompt)
+                    else: 
+                        self.conv_manager.delete_message_at(0)
+                elif sys_prompt:
+                    self.conv_manager.insert_system_message(sys_prompt)
+                
+                # Prepare Content
+                full_content = user_text + self.conv_manager.get_staged_content()
+                self.conv_manager.clear_staged_files(); self._update_staging_area()
+
+                # Add User Message
+                self.conv_manager.add_message("user", full_content)
+                self._refresh_chat_view() 
+                
+                # Trigger Generation
+                self._trigger_generation()
+                self.input_box.clear()
+
+            def _trigger_generation(self):
+                self._set_ui_state_generating()
+                self.chat_view.page().runJavaScript("showThinking();")
+                
                 model_id = self.model_combo.currentData()
                 model_name = self.model_combo.currentText()
                 temp = self.temp_slider.value() / 100.0
-                sys_prompt = self.sys_prompt_combo.currentData()
-
-                # Web Search Toggle
-                if self.chk_web_search.isChecked():
-                    if not model_id.endswith(":online"):
-                        model_id += ":online"
-                else:
-                    if model_id.endswith(":online"):
-                        model_id = model_id.replace(":online", "")
-
-                extra_params = {}
-                if self.chk_reasoning.isChecked() and self.chk_reasoning.isEnabled():
-                    extra_params["include_reasoning"] = True
-
-                if self.current_messages and self.current_messages[0]['role'] == 'system':
-                    if sys_prompt: self.current_messages[0]['content'] = sys_prompt
-                    else: self.current_messages.pop(0)
-                elif sys_prompt:
-                    self.current_messages.insert(0, {"role": "system", "content": sys_prompt})
-
-                full_content = user_text
-                for fpath in self.staged_files:
-                    try:
-                        full_content += FileExtractor.create_attachment_payload(Path(fpath).name, FileExtractor.extract_content(fpath))
-                    except Exception as e: return QMessageBox.warning(self, "Error", str(e))
-                self.staged_files = []; self._update_staging_area()
-
-                if self.current_conversation_id is None:
-                    title = (user_text[:40] + "...") if len(user_text) > 40 else (user_text or "Attachment")
-                    self.current_conversation_id = self.db_manager.add_conversation(title)
-                    item = QListWidgetItem(title); item.setData(Qt.ItemDataRole.UserRole, self.current_conversation_id)
-                    self.history_list.insertItem(0, item); self.history_list.setCurrentItem(item)
-                    if sys_prompt: self.db_manager.add_message(self.current_conversation_id, "system", sys_prompt, None, None)
-
-                self.db_manager.add_message(self.current_conversation_id, "user", full_content, None, None)
-                self.current_messages.append({"role": "user", "content": full_content})
                 
-                clean, atts = FileExtractor.strip_attachments_for_ui(full_content)
-                html_txt = markdown.markdown(clean, extensions=['fenced_code', 'tables']) if self.chk_markdown.isChecked() else html.escape(clean)
-                for f, _ in atts: html_txt += f'<span class="attachment-indicator">📎 {f}</span>'
-                self.chat_backend.message_added.emit(len(self.current_messages)-1, "user", html_txt, "You")
-                
-                self.input_box.clear(); self._set_ui_state_generating(); self._update_token_count()
-                self.chat_view.page().runJavaScript("showThinking();")
+                # Web Search Logic
+                if self.chk_web_search.isChecked() and not model_id.endswith(":online"): model_id += ":online"
+                elif not self.chk_web_search.isChecked() and model_id.endswith(":online"): model_id = model_id.replace(":online", "")
 
-                self.worker = ApiWorker(self.api_manager, model_id, self.current_messages, temp, extra_params)
-                self.worker.signals.first_token.connect(lambda: self.chat_view.page().runJavaScript(f"start_message({len(self.current_messages)}, 'assistant', '{model_name}');"))
+                extra = {}
+                if self.chk_reasoning.isChecked() and self.chk_reasoning.isEnabled(): extra["include_reasoning"] = True
+
+                self.worker = ApiWorker(self.api_manager, model_id, self.conv_manager.get_messages_for_api(), temp, extra)
+                self.worker.signals.first_token.connect(lambda: self.chat_view.page().runJavaScript(f"start_message({len(self.conv_manager.messages)}, 'assistant', '{model_name}');"))
                 self.worker.signals.new_token.connect(self.chat_backend.stream_token)
                 self.worker.signals.finished.connect(self.finalize_message)
                 self.worker.signals.error.connect(self.handle_api_error)
                 self.threadpool.start(self.worker)
 
-            def stop_generation(self):
-                if self.worker:
-                    self.worker.stop()
-                    self.send_button.setText("Stopping...")
-                    self.send_button.setEnabled(False)
-
             @pyqtSlot(dict)
             def finalize_message(self, response):
                 try:
                     content = response['choices'][0]['message']['content']
-                    self.current_messages.append({"role": "assistant", "content": content})
-                    if self.current_conversation_id:
-                        self.db_manager.add_message(self.current_conversation_id, "assistant", content, self.model_combo.currentData(), self.temp_slider.value()/100.0)
+                    self.conv_manager.add_message("assistant", content, self.model_combo.currentData(), self.temp_slider.value()/100.0)
                     
                     html_c = markdown.markdown(content, extensions=['fenced_code', 'tables']) if self.chk_markdown.isChecked() else html.escape(content)
                     safe_html = html_c.replace("\\", "\\\\").replace("'", "\\'").replace("\n", "\\n").replace("\r", "")
                     self.chat_view.page().runJavaScript(f"finalize_message('{safe_html}');")
                     self._update_token_count()
+                    
+                    if self.history_list.count() != len(self.db_manager.get_all_conversations()):
+                        self._populate_history_list()
                 except Exception as e: self.handle_api_error(str(e))
                 finally: self._set_ui_state_idle()
+
+            @pyqtSlot(int, str)
+            def _handle_edit_request(self, index, new_content):
+                if self.is_generating: return
+                self.conv_manager.update_message(index, new_content)
+                self.conv_manager.prune_after(index)
+                self._refresh_chat_view()
+                self._trigger_generation()
+
+            @pyqtSlot(int)
+            def _handle_regenerate_request(self, index):
+                if self.is_generating: return
+                self.conv_manager.delete_message_at(index)
+                self._refresh_chat_view()
+                self._trigger_generation()
+
+            @pyqtSlot(int)
+            def _handle_delete_request(self, index):
+                if self.is_generating: return
+                self.conv_manager.prune_from(index)
+                self._refresh_chat_view()
+                self._update_token_count()
 
             @pyqtSlot(str)
             def handle_api_error(self, msg):
                 self.chat_view.page().runJavaScript("removeThinking();")
                 self._set_ui_state_idle()
                 QMessageBox.critical(self, "API Error", msg)
+
+            def stop_generation(self):
+                if self.worker:
+                    # Disconnect signals to prevent post-stop UI updates (like empty bubbles)
+                    try:
+                        self.worker.signals.new_token.disconnect()
+                        self.worker.signals.finished.disconnect()
+                        self.worker.signals.error.disconnect()
+                        self.worker.signals.first_token.disconnect()
+                    except Exception:
+                        pass 
+
+                    self.worker.stop()
+                    
+                    # Force remove thinking bubble and reset UI
+                    self.chat_view.page().runJavaScript("removeThinking();")
+                    self._set_ui_state_idle()
 
             def _set_ui_state_generating(self):
                 self.is_generating = True
@@ -329,15 +332,15 @@ def main_application():
                 self.worker = None
 
             def _update_token_count(self):
-                self.token_label.setText(f"Context: ~{self.token_counter.count_tokens(self.current_messages):,} tokens")
+                self.token_label.setText(f"Context: ~{self.conv_manager.get_token_count():,} tokens")
 
             def copy_message_to_clipboard(self, index):
-                if 0 <= index < len(self.current_messages):
-                    QApplication.clipboard().setText(FileExtractor.strip_attachments_for_copy(self.current_messages[index]["content"]))
+                if 0 <= index < len(self.conv_manager.messages):
+                    QApplication.clipboard().setText(FileExtractor.strip_attachments_for_copy(self.conv_manager.messages[index]["content"]))
 
             def _copy_full_chat(self):
                 txt = ""
-                for m in self.current_messages:
+                for m in self.conv_manager.messages:
                     if m['role'] == 'system': continue
                     txt += f"--- {m['role'].upper()} ---\n{FileExtractor.strip_attachments_for_copy(m['content'])}\n\n"
                 QApplication.clipboard().setText(txt)
@@ -346,24 +349,22 @@ def main_application():
             def _load_conversation(self, item):
                 if self.is_generating: return
                 cid = item.data(Qt.ItemDataRole.UserRole)
-                if cid == self.current_conversation_id: return
-                self.current_conversation_id = cid
-                self.current_messages = []
-                self.staged_files = []; self._update_staging_area()
+                if cid == self.conv_manager.current_conversation_id: return
                 
-                for msg in self.db_manager.get_messages_for_conversation(cid):
-                    self.current_messages.append({"role": msg["role"], "content": msg["content"]})
-                
+                self.conv_manager.load_conversation(cid)
                 self._populate_system_prompts()
-                if self.current_messages and self.current_messages[0]['role'] == 'system':
-                    idx = self.sys_prompt_combo.findData(self.current_messages[0]['content'])
+                
+                msgs = self.conv_manager.messages
+                if msgs and msgs[0]['role'] == 'system':
+                    idx = self.sys_prompt_combo.findData(msgs[0]['content'])
                     self.sys_prompt_combo.setCurrentIndex(idx if idx >= 0 else 0)
                 
-                self._refresh_chat_view(); self._update_token_count()
+                self._refresh_chat_view()
+                self._update_token_count()
 
             def _refresh_chat_view(self):
                 self.chat_view.page().runJavaScript("clearChat();")
-                for i, m in enumerate(self.current_messages):
+                for i, m in enumerate(self.conv_manager.messages):
                     if m['role'] == 'system': continue
                     clean, atts = FileExtractor.strip_attachments_for_ui(m['content'])
                     h = markdown.markdown(clean, extensions=['fenced_code', 'tables']) if self.chk_markdown.isChecked() else html.escape(clean)
@@ -408,25 +409,24 @@ def main_application():
                 if QMessageBox.question(self, "Confirm", "Delete?") == QMessageBox.StandardButton.Yes:
                     self.db_manager.delete_conversation(item.data(Qt.ItemDataRole.UserRole))
                     self.history_list.takeItem(self.history_list.row(item))
-                    if self.current_conversation_id == item.data(Qt.ItemDataRole.UserRole): self._new_chat()
+                    if self.conv_manager.current_conversation_id == item.data(Qt.ItemDataRole.UserRole): self._new_chat()
 
             def _attach_file(self):
                 files, _ = QFileDialog.getOpenFileNames(self, "Attach", "", FileExtractor.get_supported_extensions())
-                for f in files: 
-                    if f not in self.staged_files: self.staged_files.append(f)
+                for f in files: self.conv_manager.add_staged_file(f)
                 self._update_staging_area()
 
             def _update_staging_area(self):
                 while self.staging_layout.count(): 
                     w = self.staging_layout.takeAt(0).widget()
                     if w: w.deleteLater()
-                self.staging_container.setVisible(bool(self.staged_files))
-                for f in self.staged_files:
+                self.staging_container.setVisible(bool(self.conv_manager.staged_files))
+                for f in self.conv_manager.staged_files:
                     chip = QFrame(); chip.setStyleSheet("background-color: #3c3c3c; border-radius: 5px;")
                     l = QHBoxLayout(chip); l.setContentsMargins(5,2,5,2)
                     l.addWidget(QLabel(Path(f).name, styleSheet="color: white;"))
                     btn = QPushButton("x", styleSheet="background-color: #d32f2f; color: white; border-radius: 10px;"); btn.setFixedSize(20,20)
-                    btn.clicked.connect(lambda _, p=f: (self.staged_files.remove(p), self._update_staging_area()))
+                    btn.clicked.connect(lambda _, p=f: (self.conv_manager.remove_staged_file(p), self._update_staging_area()))
                     l.addWidget(btn); self.staging_layout.addWidget(chip)
 
         window = MainWindow(log_stream.log_signal)

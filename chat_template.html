@@ -1,6 +1,6 @@
 <!-- chat_template.html for YaOG -->
-<!-- Version: 3.5.3 (Phase 3: Model Management) -->
-<!-- Description: Frontend view. Removed left border from bubbles. -->
+<!-- Version: 4.1.2 (Regression Fixes) -->
+<!-- Description: Restored Copy button visual feedback. -->
 
 <!DOCTYPE html>
 <html>
@@ -35,18 +35,17 @@
         }
 
         .user {
-            background-color: #e3f2fd; /* Light Blue */
+            background-color: #e3f2fd;
             align-self: flex-end;
             color: #000000;
         }
 
         .assistant {
-            background-color: #f5f5f5; /* Light Grey */
+            background-color: #f5f5f5;
             align-self: flex-start;
             color: #000000;
         }
 
-        /* Thinking Indicator Styling */
         .thinking {
             background-color: #f0f0f0;
             align-self: flex-start;
@@ -74,7 +73,12 @@
             color: #333333;
         }
 
-        .copy-btn {
+        .btn-group {
+            display: flex;
+            gap: 5px;
+        }
+
+        .action-btn {
             background-color: #ffffff;
             border: 1px solid #ccc;
             color: #555;
@@ -82,28 +86,54 @@
             cursor: pointer;
             font-size: 12px;
             padding: 2px 8px;
-            min-width: 40px;
-            text-align: center;
             transition: all 0.2s;
         }
 
-        .copy-btn:hover {
+        .action-btn:hover {
             background-color: #eee;
             color: #000;
             border-color: #999;
         }
-        
-        .copy-btn.copied {
-            background-color: #e8f5e9;
-            border-color: #4caf50;
-            color: #2e7d32;
+
+        .copied {
+            background-color: #e8f5e9 !important;
+            color: #2e7d32 !important;
+            border-color: #2e7d32 !important;
+        }
+
+        .danger-btn:hover {
+            background-color: #ffebee;
+            color: #d32f2f;
+            border-color: #d32f2f;
         }
 
         .content-body {
             white-space: pre-wrap;
             word-wrap: break-word;
         }
-        
+
+        /* Edit Mode Styles */
+        .edit-area {
+            width: 100%;
+            min-height: 100px;
+            font-family: inherit;
+            font-size: inherit;
+            padding: 5px;
+            margin-bottom: 5px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            resize: vertical;
+        }
+
+        .edit-controls {
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+        }
+
+        .save-btn { background-color: #4caf50; color: white; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer; }
+        .cancel-btn { background-color: #f44336; color: white; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer; }
+
         .attachment-indicator {
             color: #555;
             font-family: sans-serif;
@@ -116,7 +146,6 @@
             border: 1px dashed #aaa;
         }
 
-        /* Markdown specific styling */
         .content-body code {
             background-color: #eee;
             color: #d63384;
@@ -132,12 +161,6 @@
             border-radius: 5px;
             overflow-x: auto;
         }
-        
-        .content-body pre code {
-            background-color: transparent;
-            color: inherit;
-            padding: 0;
-        }
     </style>
 </head>
 <body>
@@ -150,8 +173,7 @@
         let isScrolling = false;
 
         function clearChat() {
-            const chatContainer = document.getElementById('chat-container');
-            chatContainer.innerHTML = '';
+            document.getElementById('chat-container').innerHTML = '';
             currentContentDiv = null;
         }
 
@@ -217,6 +239,7 @@
             const chatContainer = document.getElementById('chat-container');
             const messageDiv = document.createElement('div');
             messageDiv.classList.add('message', role);
+            messageDiv.id = `msg-${index}`;
 
             const headerDiv = document.createElement('div');
             headerDiv.classList.add('message-header');
@@ -225,28 +248,66 @@
             title.textContent = (role === 'user') ? "You" : `Assistant (${modelName})`;
             headerDiv.appendChild(title);
 
+            const btnGroup = document.createElement('div');
+            btnGroup.classList.add('btn-group');
+
+            // Copy Button
             const copyBtn = document.createElement('button');
             copyBtn.textContent = "Copy";
-            copyBtn.classList.add('copy-btn');
-            
+            copyBtn.classList.add('action-btn');
             copyBtn.onclick = function() {
-                if (backendProxy) {
-                    backendProxy.copy_message(index);
-                    const originalText = "Copy";
-                    copyBtn.textContent = "✓";
-                    copyBtn.classList.add('copied');
-                    setTimeout(() => {
-                        copyBtn.textContent = originalText;
-                        copyBtn.classList.remove('copied');
-                    }, 2000);
+                if (backendProxy) backendProxy.copy_message(index);
+                
+                // Visual Feedback
+                const originalText = copyBtn.textContent;
+                copyBtn.textContent = "✓";
+                copyBtn.classList.add('copied');
+                setTimeout(() => {
+                    copyBtn.textContent = originalText;
+                    copyBtn.classList.remove('copied');
+                }, 2000);
+            };
+            btnGroup.appendChild(copyBtn);
+
+            // Edit Button (User only)
+            if (role === 'user' && isFinal) {
+                const editBtn = document.createElement('button');
+                editBtn.textContent = "Edit";
+                editBtn.classList.add('action-btn');
+                editBtn.onclick = function() { enableEditing(index); };
+                btnGroup.appendChild(editBtn);
+            }
+
+            // Regenerate Button (Assistant only, usually last one)
+            if (role === 'assistant' && isFinal) {
+                const regenBtn = document.createElement('button');
+                regenBtn.textContent = "Regenerate";
+                regenBtn.classList.add('action-btn');
+                regenBtn.onclick = function() { 
+                    if(confirm("Regenerate this response?")) {
+                        if (backendProxy) backendProxy.request_regenerate(index);
+                    }
+                };
+                btnGroup.appendChild(regenBtn);
+            }
+
+            // Delete Button (All messages)
+            const delBtn = document.createElement('button');
+            delBtn.textContent = "Delete";
+            delBtn.classList.add('action-btn', 'danger-btn');
+            delBtn.onclick = function() {
+                if(confirm("Delete this message and everything after it?")) {
+                    if (backendProxy) backendProxy.request_delete(index);
                 }
             };
-            
-            headerDiv.appendChild(copyBtn);
+            btnGroup.appendChild(delBtn);
+
+            headerDiv.appendChild(btnGroup);
             messageDiv.appendChild(headerDiv);
 
             const contentDiv = document.createElement('div');
             contentDiv.classList.add('content-body');
+            contentDiv.id = `content-${index}`;
             
             if (isFinal) {
                 contentDiv.innerHTML = initialContent;
@@ -258,6 +319,44 @@
             messageDiv.appendChild(contentDiv);
             chatContainer.appendChild(messageDiv);
             window.scrollTo(0, document.body.scrollHeight);
+        }
+
+        function enableEditing(index) {
+            const contentDiv = document.getElementById(`content-${index}`);
+            if (!contentDiv) return;
+
+            const currentHTML = contentDiv.innerHTML;
+            const currentText = contentDiv.innerText;
+
+            contentDiv.innerHTML = '';
+            
+            const textArea = document.createElement('textarea');
+            textArea.classList.add('edit-area');
+            textArea.value = currentText;
+            
+            const controlsDiv = document.createElement('div');
+            controlsDiv.classList.add('edit-controls');
+            
+            const saveBtn = document.createElement('button');
+            saveBtn.textContent = "Save & Branch";
+            saveBtn.classList.add('save-btn');
+            saveBtn.onclick = function() {
+                const newText = textArea.value;
+                if (backendProxy) backendProxy.request_edit(index, newText);
+            };
+
+            const cancelBtn = document.createElement('button');
+            cancelBtn.textContent = "Cancel";
+            cancelBtn.classList.add('cancel-btn');
+            cancelBtn.onclick = function() {
+                contentDiv.innerHTML = currentHTML;
+            };
+
+            controlsDiv.appendChild(cancelBtn);
+            controlsDiv.appendChild(saveBtn);
+            
+            contentDiv.appendChild(textArea);
+            contentDiv.appendChild(controlsDiv);
         }
     </script>
 </body>

@@ -7,6 +7,7 @@ designdoc.md
 techspec.md
 prompt.txt
 test_phase*.py
+files.zip
 # --- Python & Virtual Env ---
 __pycache__/
 *.py[cod]
