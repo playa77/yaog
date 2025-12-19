@@ -19,7 +19,7 @@ class MainWindowUI:
     """
     def setup_ui(self, main_window):
         # UPDATED: Version number to match main script
-        main_window.setWindowTitle("YaOG (v4.1.3)")
+        main_window.setWindowTitle("YaOG (v4.1.5)")
         main_window.setGeometry(100, 100, 1400, 900)
         
         self._create_docks(main_window)

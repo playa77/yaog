@@ -1,6 +1,6 @@
 <!-- chat_template.html for YaOG -->
-<!-- Version: 4.1.2 (Regression Fixes) -->
-<!-- Description: Restored Copy button visual feedback. -->
+<!-- Version: 4.1.7 (Regenerate Fix) -->
+<!-- Description: Ensures Regenerate button appears on the latest answer after streaming finishes. -->
 
 <!DOCTYPE html>
 <html>
@@ -230,6 +230,34 @@
         function finalize_message(htmlContent) {
             if (currentContentDiv) {
                 currentContentDiv.innerHTML = htmlContent;
+                
+                // Inject Regenerate button for the just-finished Assistant message
+                const messageDiv = currentContentDiv.closest('.message');
+                if (messageDiv && messageDiv.classList.contains('assistant')) {
+                    const btnGroup = messageDiv.querySelector('.btn-group');
+                    if (btnGroup) {
+                        // Extract index from ID "msg-123"
+                        const idParts = messageDiv.id.split('-');
+                        const index = parseInt(idParts[1]);
+
+                        const regenBtn = document.createElement('button');
+                        regenBtn.textContent = "Regenerate";
+                        regenBtn.classList.add('action-btn');
+                        regenBtn.onclick = function() { 
+                            if(confirm("Regenerate this response? (Deletes subsequent messages)")) {
+                                if (backendProxy) backendProxy.request_regenerate(index);
+                            }
+                        };
+
+                        // Insert before the Delete button (which is usually the last child)
+                        if (btnGroup.lastChild) {
+                            btnGroup.insertBefore(regenBtn, btnGroup.lastChild);
+                        } else {
+                            btnGroup.appendChild(regenBtn);
+                        }
+                    }
+                }
+
                 window.scrollTo(0, document.body.scrollHeight);
                 currentContentDiv = null;
             }
@@ -278,13 +306,14 @@
                 btnGroup.appendChild(editBtn);
             }
 
-            // Regenerate Button (Assistant only, usually last one)
+            // Regenerate Button (Assistant only)
+            // Note: This handles history loading. The live streaming case is handled in finalize_message.
             if (role === 'assistant' && isFinal) {
                 const regenBtn = document.createElement('button');
                 regenBtn.textContent = "Regenerate";
                 regenBtn.classList.add('action-btn');
                 regenBtn.onclick = function() { 
-                    if(confirm("Regenerate this response?")) {
+                    if(confirm("Regenerate this response? (Deletes subsequent messages)")) {
                         if (backendProxy) backendProxy.request_regenerate(index);
                     }
                 };

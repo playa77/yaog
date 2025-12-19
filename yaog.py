@@ -1,5 +1,5 @@
-# Script Version: 4.1.3 | Last Updated: 2025-12-18
-# Description: Main Application Logic. Fixed stuck thinking bubble on Stop.
+# Script Version: 4.1.5 | Last Updated: 2025-12-18
+# Description: Main Application Logic. Added Regenerate support for User messages.
 
 import sys
 import json
@@ -279,7 +279,16 @@ def main_application():
             @pyqtSlot(int)
             def _handle_regenerate_request(self, index):
                 if self.is_generating: return
-                self.conv_manager.delete_message_at(index)
+                
+                # Check role to determine pruning strategy
+                msg = self.conv_manager.messages[index]
+                if msg['role'] == 'assistant':
+                    # If Assistant: Delete this message AND future messages, then regen
+                    self.conv_manager.prune_from(index)
+                else:
+                    # If User: Keep this message, delete future messages, then regen
+                    self.conv_manager.prune_after(index)
+                
                 self._refresh_chat_view()
                 self._trigger_generation()
 
@@ -298,7 +307,6 @@ def main_application():
 
             def stop_generation(self):
                 if self.worker:
-                    # Disconnect signals to prevent post-stop UI updates (like empty bubbles)
                     try:
                         self.worker.signals.new_token.disconnect()
                         self.worker.signals.finished.disconnect()
@@ -308,8 +316,6 @@ def main_application():
                         pass 
 
                     self.worker.stop()
-                    
-                    # Force remove thinking bubble and reset UI
                     self.chat_view.page().runJavaScript("removeThinking();")
                     self._set_ui_state_idle()
 
