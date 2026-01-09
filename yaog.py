@@ -1,5 +1,6 @@
-# Script Version: 5.2.1 | Last Updated: 2025-12-18
-# Description: Main Application Logic. Version bump for Refined Slate UI updates.
+# Script Version: 5.2.4 | Last Updated: 2026-01-09
+# Description: Main Application Logic. 
+#              Updates: Shows specific Model ID in chat bubbles instead of generic names.
 
 import sys
 import json
@@ -75,6 +76,7 @@ def main_application():
                 self.is_web_ready = False
                 self.model_metadata = {} 
                 self.threadpool = QThreadPool()
+                self.active_model_id = None # Stores the ID of the model currently generating
 
                 log_signal.connect(self._append_log)
                 self._connect_signals()
@@ -256,17 +258,24 @@ def main_application():
                 self.chat_view.page().runJavaScript("showThinking();")
                 
                 model_id = self.model_combo.currentData()
-                model_name = self.model_combo.currentText()
                 temp = self.temp_slider.value() * 0.05
                 
-                if self.chk_web_search.isChecked() and not model_id.endswith(":online"): model_id += ":online"
-                elif not self.chk_web_search.isChecked() and model_id.endswith(":online"): model_id = model_id.replace(":online", "")
+                # Handle :online suffix logic
+                if self.chk_web_search.isChecked() and not model_id.endswith(":online"): 
+                    model_id += ":online"
+                elif not self.chk_web_search.isChecked() and model_id.endswith(":online"): 
+                    model_id = model_id.replace(":online", "")
+
+                # Store active model ID for finalize_message
+                self.active_model_id = model_id
 
                 extra = {}
                 if self.chk_reasoning.isChecked() and self.chk_reasoning.isEnabled(): extra["include_reasoning"] = True
 
                 self.worker = ApiWorker(self.api_manager, model_id, self.conv_manager.get_messages_for_api(), temp, extra)
-                self.worker.signals.first_token.connect(lambda: self.chat_view.page().runJavaScript(f"start_message({len(self.conv_manager.messages)}, 'assistant', '{model_name}');"))
+                
+                # Pass the specific model_id to the frontend
+                self.worker.signals.first_token.connect(lambda: self.chat_view.page().runJavaScript(f"start_message({len(self.conv_manager.messages)}, 'assistant', '{model_id}');"))
                 self.worker.signals.new_token.connect(self.chat_backend.stream_token)
                 self.worker.signals.finished.connect(self.finalize_message)
                 self.worker.signals.error.connect(self.handle_api_error)
@@ -277,7 +286,11 @@ def main_application():
                 try:
                     content = response['choices'][0]['message']['content']
                     current_temp = self.temp_slider.value() * 0.05
-                    self.conv_manager.add_message("assistant", content, self.model_combo.currentData(), current_temp)
+                    
+                    # Use the stored active_model_id to ensure history matches what was run
+                    model_used = self.active_model_id if self.active_model_id else self.model_combo.currentData()
+                    
+                    self.conv_manager.add_message("assistant", content, model_used, current_temp)
                     
                     html_c = markdown.markdown(content, extensions=['fenced_code', 'tables']) if self.chk_markdown.isChecked() else html.escape(content)
                     safe_html = html_c.replace("\\", "\\\\").replace("'", "\\'").replace("\n", "\\n").replace("\r", "")
@@ -410,7 +423,10 @@ def main_application():
                     clean, atts = FileExtractor.strip_attachments_for_ui(m['content'])
                     h = markdown.markdown(clean, extensions=['fenced_code', 'tables']) if self.chk_markdown.isChecked() else html.escape(clean)
                     for f, _ in atts: h += f'<span class="attachment-indicator">📎 {f}</span>'
-                    self.chat_backend.message_added.emit(i, m['role'], h, "AI")
+                    
+                    # Pass the specific model ID used, fallback to "AI"
+                    model_display = m.get('model_used') or "AI"
+                    self.chat_backend.message_added.emit(i, m['role'], h, model_display)
 
             def _show_history_context_menu(self, pos):
                 menu = QMenu()
