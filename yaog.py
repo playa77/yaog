@@ -1,10 +1,11 @@
-# Script Version: 4.1.5 | Last Updated: 2025-12-18
-# Description: Main Application Logic. Added Regenerate support for User messages.
+# Script Version: 5.2.1 | Last Updated: 2025-12-18
+# Description: Main Application Logic. Version bump for Refined Slate UI updates.
 
 import sys
 import json
 import signal
 import html
+import re
 from pathlib import Path
 
 # --- Local Imports ---
@@ -17,6 +18,7 @@ from worker_manager import ApiWorker
 from ui_dialogs import SettingsDialog, SystemPromptDialog
 from ui_main_window import MainWindowUI
 from chat_backend import ChatBackend
+from theme_manager import ThemeManager
 
 sys.excepthook = crash_handler
 
@@ -37,7 +39,15 @@ def main_application():
         from dotenv import load_dotenv
         import markdown
 
+        if hasattr(Qt.ApplicationAttribute, 'AA_EnableHighDpiScaling'):
+            QApplication.setAttribute(Qt.ApplicationAttribute.AA_EnableHighDpiScaling, True)
+        if hasattr(Qt.ApplicationAttribute, 'AA_UseHighDpiPixmaps'):
+            QApplication.setAttribute(Qt.ApplicationAttribute.AA_UseHighDpiPixmaps, True)
+
         app = QApplication(sys.argv)
+        
+        ThemeManager.load_theme(app)
+
         profile = QWebEngineProfile.defaultProfile()
         profile.setHttpCacheType(QWebEngineProfile.HttpCacheType.MemoryHttpCache)
         profile.setPersistentCookiesPolicy(QWebEngineProfile.PersistentCookiesPolicy.NoPersistentCookies)
@@ -83,10 +93,16 @@ def main_application():
                 self.history_list.customContextMenuRequested.connect(self._show_history_context_menu)
                 self.history_list.itemClicked.connect(self._load_conversation)
                 self.manage_prompts_btn.clicked.connect(self._open_prompt_manager)
-                self.temp_slider.valueChanged.connect(lambda val: self.temp_label.setText(f"{val/100.0:.2f}"))
+                
+                self.temp_slider.valueChanged.connect(lambda val: self.temp_label.setText(f"{val * 0.05:.2f}"))
+                
                 self.chk_markdown.toggled.connect(self._refresh_chat_view)
                 self.btn_settings.clicked.connect(self._open_settings)
-                self.btn_copy_all.clicked.connect(self._copy_full_chat)
+                
+                # Dual Copy Buttons
+                self.btn_copy_chat.clicked.connect(self._copy_full_chat)
+                self.btn_copy_context.clicked.connect(self._copy_full_context)
+                
                 self.attach_btn.clicked.connect(self._attach_file)
                 self.send_button.clicked.connect(self.send_message)
                 self.chat_view.loadFinished.connect(self._on_page_load_finished)
@@ -129,7 +145,17 @@ def main_application():
             @pyqtSlot()
             def _on_page_load_finished(self):
                 self.is_web_ready = True
+                self._sync_web_font()
                 self._apply_ui_settings()
+
+            def _sync_web_font(self):
+                font = QApplication.font()
+                family = font.family()
+                family_safe = family.replace("'", "\\'")
+                js = f"""
+                document.documentElement.style.setProperty('--main-font', "'{family_safe}', sans-serif");
+                """
+                self.chat_view.page().runJavaScript(js)
 
             def _apply_ui_settings(self):
                 font_size = self.settings_manager.get("font_size")
@@ -152,8 +178,6 @@ def main_application():
                 mid = self.model_combo.currentData()
                 if not mid: return
                 meta = self.model_metadata.get(mid, {})
-                
-                # Capabilities
                 supported = meta.get("supported_parameters", [])
                 self.chk_reasoning.setEnabled("include_reasoning" in supported)
                 if not self.chk_reasoning.isEnabled(): self.chk_reasoning.setChecked(False)
@@ -206,7 +230,6 @@ def main_application():
                 if not user_text and not self.conv_manager.staged_files: return
                 if not self.api_manager.is_configured(): return QMessageBox.warning(self, "Error", "API Key missing.")
 
-                # Handle System Prompt
                 sys_prompt = self.sys_prompt_combo.currentData()
                 msgs = self.conv_manager.messages
                 
@@ -218,15 +241,13 @@ def main_application():
                 elif sys_prompt:
                     self.conv_manager.insert_system_message(sys_prompt)
                 
-                # Prepare Content
                 full_content = user_text + self.conv_manager.get_staged_content()
                 self.conv_manager.clear_staged_files(); self._update_staging_area()
 
-                # Add User Message
-                self.conv_manager.add_message("user", full_content)
+                current_temp = self.temp_slider.value() * 0.05
+                self.conv_manager.add_message("user", full_content, None, current_temp)
                 self._refresh_chat_view() 
                 
-                # Trigger Generation
                 self._trigger_generation()
                 self.input_box.clear()
 
@@ -236,9 +257,8 @@ def main_application():
                 
                 model_id = self.model_combo.currentData()
                 model_name = self.model_combo.currentText()
-                temp = self.temp_slider.value() / 100.0
+                temp = self.temp_slider.value() * 0.05
                 
-                # Web Search Logic
                 if self.chk_web_search.isChecked() and not model_id.endswith(":online"): model_id += ":online"
                 elif not self.chk_web_search.isChecked() and model_id.endswith(":online"): model_id = model_id.replace(":online", "")
 
@@ -256,7 +276,8 @@ def main_application():
             def finalize_message(self, response):
                 try:
                     content = response['choices'][0]['message']['content']
-                    self.conv_manager.add_message("assistant", content, self.model_combo.currentData(), self.temp_slider.value()/100.0)
+                    current_temp = self.temp_slider.value() * 0.05
+                    self.conv_manager.add_message("assistant", content, self.model_combo.currentData(), current_temp)
                     
                     html_c = markdown.markdown(content, extensions=['fenced_code', 'tables']) if self.chk_markdown.isChecked() else html.escape(content)
                     safe_html = html_c.replace("\\", "\\\\").replace("'", "\\'").replace("\n", "\\n").replace("\r", "")
@@ -279,16 +300,11 @@ def main_application():
             @pyqtSlot(int)
             def _handle_regenerate_request(self, index):
                 if self.is_generating: return
-                
-                # Check role to determine pruning strategy
                 msg = self.conv_manager.messages[index]
                 if msg['role'] == 'assistant':
-                    # If Assistant: Delete this message AND future messages, then regen
                     self.conv_manager.prune_from(index)
                 else:
-                    # If User: Keep this message, delete future messages, then regen
                     self.conv_manager.prune_after(index)
-                
                 self._refresh_chat_view()
                 self._trigger_generation()
 
@@ -312,9 +328,7 @@ def main_application():
                         self.worker.signals.finished.disconnect()
                         self.worker.signals.error.disconnect()
                         self.worker.signals.first_token.disconnect()
-                    except Exception:
-                        pass 
-
+                    except Exception: pass 
                     self.worker.stop()
                     self.chat_view.page().runJavaScript("removeThinking();")
                     self._set_ui_state_idle()
@@ -322,7 +336,9 @@ def main_application():
             def _set_ui_state_generating(self):
                 self.is_generating = True
                 self.send_button.setText("Stop")
-                self.send_button.setStyleSheet("background-color: #d32f2f; color: white; font-weight: bold;")
+                self.send_button.setProperty("danger", True)
+                self.send_button.style().unpolish(self.send_button)
+                self.send_button.style().polish(self.send_button)
                 self.input_box.setEnabled(False)
                 self.attach_btn.setEnabled(False)
                 self.controls_dock.setEnabled(False)
@@ -330,7 +346,9 @@ def main_application():
             def _set_ui_state_idle(self):
                 self.is_generating = False
                 self.send_button.setText("Send Message")
-                self.send_button.setStyleSheet("")
+                self.send_button.setProperty("danger", False)
+                self.send_button.style().unpolish(self.send_button)
+                self.send_button.style().polish(self.send_button)
                 self.send_button.setEnabled(True)
                 self.input_box.setEnabled(True)
                 self.attach_btn.setEnabled(True)
@@ -345,26 +363,43 @@ def main_application():
                     QApplication.clipboard().setText(FileExtractor.strip_attachments_for_copy(self.conv_manager.messages[index]["content"]))
 
             def _copy_full_chat(self):
-                txt = ""
-                for m in self.conv_manager.messages:
-                    if m['role'] == 'system': continue
-                    txt += f"--- {m['role'].upper()} ---\n{FileExtractor.strip_attachments_for_copy(m['content'])}\n\n"
-                QApplication.clipboard().setText(txt)
+                """Phase 5.1: Copies readable transcript (no raw file data)."""
+                buffer = []
+                if self.conv_manager.current_conversation_id:
+                    buffer.append(f"=== CHAT TRANSCRIPT ===\n")
+                for msg in self.conv_manager.messages:
+                    role = "User" if msg['role'] == 'user' else f"Assistant ({msg.get('model_used', 'AI')})"
+                    content, _ = FileExtractor.strip_attachments_for_ui(msg['content'])
+                    buffer.append(f"[{role}]:\n{content.strip()}\n")
+                QApplication.clipboard().setText("\n".join(buffer))
+                self._append_log("[INFO] Chat transcript copied to clipboard.")
+
+            def _copy_full_context(self):
+                """Phase 5.1: Copies raw context including file payloads."""
+                buffer = []
+                if self.conv_manager.current_conversation_id:
+                    buffer.append(f"=== RAW CONTEXT EXPORT ===\n")
+                for msg in self.conv_manager.messages:
+                    role = msg['role'].upper()
+                    content = msg['content']
+                    clean_content = re.sub(r'<div class="yaog-file-content" data-filename="[^"]+">', '', content).replace('</div>', '')
+                    buffer.append(f"--- {role} ---")
+                    buffer.append(clean_content.strip())
+                    buffer.append("\n")
+                QApplication.clipboard().setText("\n".join(buffer))
+                self._append_log("[INFO] Raw context copied to clipboard.")
 
             @pyqtSlot(QListWidgetItem)
             def _load_conversation(self, item):
                 if self.is_generating: return
                 cid = item.data(Qt.ItemDataRole.UserRole)
                 if cid == self.conv_manager.current_conversation_id: return
-                
                 self.conv_manager.load_conversation(cid)
                 self._populate_system_prompts()
-                
                 msgs = self.conv_manager.messages
                 if msgs and msgs[0]['role'] == 'system':
                     idx = self.sys_prompt_combo.findData(msgs[0]['content'])
                     self.sys_prompt_combo.setCurrentIndex(idx if idx >= 0 else 0)
-                
                 self._refresh_chat_view()
                 self._update_token_count()
 

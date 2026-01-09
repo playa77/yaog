@@ -1,12 +1,8 @@
 # utils.py for YaOG (yaog.py)
-# Version: 1.6
+# Version: 5.0.0 (Phase 0: Asset Restructuring)
 # Description: General-purpose utility functions and classes.
 #              Includes crash handling, file setup, stdout redirection,
 #              file content extraction, token counting, and Env management.
-#
-# Change Log (v1.6):
-# - [Build] Added resource_path() to support PyInstaller bundling.
-# - [Build] setup_project_files() now skips HTML check if frozen.
 
 import sys
 import json
@@ -64,10 +60,17 @@ def resource_path(relative_path):
 def setup_project_files():
     """
     Checks for essential configuration files and creates placeholders if missing.
+    Updated for v5.0 to check the 'assets' directory.
     """
     print("[INFO] Verifying essential project files...")
     
-    # .env
+    # 1. Check assets directory
+    assets_dir = Path("assets")
+    if not assets_dir.exists():
+        print("[INFO] 'assets' directory not found. Creating it.")
+        assets_dir.mkdir(exist_ok=True)
+
+    # 2. .env
     if not Path(".env").exists():
         print("[INFO] '.env' file not found. Creating a placeholder.")
         try:
@@ -76,7 +79,7 @@ def setup_project_files():
         except IOError as e:
             print(f"\033[91m[ERROR] Could not create .env file: {e}\033[0m")
 
-    # models.json
+    # 3. models.json
     if not Path("models.json").exists():
         print("[INFO] 'models.json' not found. Creating defaults.")
         default_models = {
@@ -92,12 +95,20 @@ def setup_project_files():
         except IOError as e:
             print(f"\033[91m[ERROR] Could not create models.json: {e}\033[0m")
 
-    # chat_template.html
+    # 4. chat_template.html (Moved to assets/)
     # If frozen (bundled), the HTML is inside the executable, so we don't check disk.
     is_frozen = getattr(sys, 'frozen', False)
-    if not is_frozen and not Path("chat_template.html").exists():
-        print("\033[91m[FATAL] 'chat_template.html' is missing.\033[0m")
-        sys.exit(1)
+    if not is_frozen:
+        html_path = assets_dir / "chat_template.html"
+        if not html_path.exists():
+            print(f"\033[91m[FATAL] '{html_path}' is missing. Please ensure the assets folder is populated.\033[0m")
+            sys.exit(1)
+            
+    # 5. style.qss (New in v5.0)
+    if not is_frozen:
+        qss_path = assets_dir / "style.qss"
+        if not qss_path.exists():
+            print("[WARNING] 'assets/style.qss' is missing. UI will lack styling.")
     
     print("[INFO] Project file verification complete.")
 

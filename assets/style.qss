@@ -1,0 +1,209 @@
+/* 
+    YaOG v5.2.1 "Refined Slate" Theme
+    File: assets/style.qss
+*/
+
+/* --- 1. Global Reset --- */
+QWidget {
+    font-family: "Segoe UI", "Inter", "Roboto", sans-serif;
+    font-size: 13px;
+    color: #1F2937;
+    background-color: #F9FAFB; /* Soft Cool Gray, not stark white */
+}
+
+/* --- 2. Sidebar Containers (Deep Slate) --- */
+/* This targets the main containers in the docks */
+QWidget#sidebar_container, QWidget#sidebar_header {
+    background-color: #111827; /* Darker Slate for better contrast */
+    color: #F3F4F6;
+}
+
+/* Force ScrollArea to match to prevent white borders */
+QScrollArea {
+    background-color: #111827;
+    border: none;
+}
+
+/* Sidebar Labels - High Contrast Fix */
+QWidget#sidebar_container QLabel {
+    color: #E5E7EB; 
+    font-weight: 600;
+}
+
+/* Specific styling for the System Logs header */
+QLabel#log_label_header {
+    background-color: #111827; /* Dark background matching sidebar */
+    color: #6B7280; 
+    font-size: 10px; 
+    font-weight: 700; 
+    padding: 5px 15px; /* Adjust padding to match other sidebar elements */
+    letter-spacing: 1px;
+}
+
+/* Group Boxes */
+QWidget#sidebar_container QGroupBox {
+    color: #60A5FA; /* Light Blue for Section Headers */
+    font-weight: 700;
+    border: 1px solid #374151;
+    border-radius: 6px;
+    margin-top: 12px;
+    padding-top: 15px;
+    background-color: #1F2937; /* Slightly lighter than container */
+}
+
+QWidget#sidebar_container QGroupBox::title {
+    subcontrol-origin: margin;
+    subcontrol-position: top left;
+    padding: 0 5px;
+    left: 10px;
+}
+
+/* --- 3. Left Sidebar Specifics --- */
+/* The Header Bar */
+QFrame#sidebar_header {
+    background-color: #111827;
+    border-bottom: 1px solid #374151;
+}
+
+/* History List */
+QListWidget#history_list {
+    background-color: #111827;
+    border: none;
+    outline: none;
+}
+
+QListWidget#history_list::item {
+    color: #9CA3AF;
+    padding: 12px 15px;
+    border-bottom: 1px solid #1F2937;
+}
+
+QListWidget#history_list::item:hover {
+    background-color: #1F2937;
+    color: #FFFFFF;
+}
+
+QListWidget#history_list::item:selected {
+    background-color: #374151;
+    color: #FFFFFF;
+    border-left: 3px solid #60A5FA;
+}
+
+/* Logs */
+QTextEdit#log_output {
+    background-color: #000000;
+    color: #34D399; /* Emerald Green */
+    border-top: 1px solid #374151;
+    font-family: "Consolas", monospace;
+    font-size: 11px;
+}
+
+/* --- 4. Buttons --- */
+QPushButton {
+    min-height: 32px;
+    border: 1px solid #D1D5DB;
+    border-radius: 6px;
+    background-color: #FFFFFF;
+    color: #374151;
+    font-weight: 600;
+    padding: 0 15px;
+}
+
+QPushButton:hover {
+    background-color: #F3F4F6;
+    border-color: #9CA3AF;
+}
+
+/* Danger state for Send button (e.g., "Stop" during generation) */
+QPushButton[danger="true"] {
+    background-color: #EF4444; /* Red */
+    color: #FFFFFF;
+    border: none;
+}
+
+QPushButton[danger="true"]:hover {
+    background-color: #DC2626; /* Darker Red */
+}
+
+/* Sidebar Buttons (Dark Context) */
+QWidget#sidebar_container QPushButton, QFrame#sidebar_header QPushButton {
+    background-color: #374151;
+    color: #FFFFFF;
+    border: 1px solid #4B5563;
+}
+
+QWidget#sidebar_container QPushButton:hover, QFrame#sidebar_header QPushButton:hover {
+    background-color: #4B5563;
+    border-color: #6B7280;
+}
+
+/* New Chat Button Special Styling */
+QPushButton#new_chat_btn {
+    background-color: #2563EB;
+    border: none;
+    color: white;
+    text-align: left;
+    padding-left: 15px;
+}
+QPushButton#new_chat_btn:hover {
+    background-color: #3B82F6;
+}
+
+/* --- 5. Inputs (Dark Context) --- */
+QWidget#sidebar_container QComboBox,
+QWidget#sidebar_container QSpinBox {
+    background-color: #111827; /* Dark background */
+    color: #FFFFFF;            /* White text */
+    border: 1px solid #4B5563;
+    border-radius: 4px;
+    min-height: 30px;
+    padding: 0 5px;
+}
+
+QWidget#sidebar_container QComboBox::drop-down {
+    border: none;
+    background: transparent;
+}
+
+/* Checkboxes */
+QWidget#sidebar_container QCheckBox {
+    color: #E5E7EB;
+    spacing: 8px;
+}
+
+QWidget#sidebar_container QCheckBox::indicator {
+    width: 16px;
+    height: 16px;
+    border: 1px solid #6B7280;
+    border-radius: 3px;
+    background: #1F2937;
+}
+
+QWidget#sidebar_container QCheckBox::indicator:checked {
+    background-color: #2563EB;
+    border-color: #2563EB;
+}
+
+/* --- 6. Central Area --- */
+/* Input Box */
+QTextEdit {
+    background-color: #FFFFFF;
+    border: 1px solid #E5E7EB;
+    border-radius: 8px;
+    padding: 10px;
+    color: #1F2937;
+}
+
+/* --- 7. Custom Tooltip (Matches Attach Button Scheme) --- */
+QLabel#custom_tooltip {
+    background-color: #FFFFFF;
+    color: #374151;
+    border: 1px solid #D1D5DB;
+    border-radius: 6px;
+    padding: 6px 10px;
+    font-family: "Segoe UI", "Inter", sans-serif;
+    font-size: 12px;
+    font-weight: 600;
+    /* Optional: Add a subtle shadow if supported by the OS compositor, 
+       but QSS shadow support is limited on labels. */
+}

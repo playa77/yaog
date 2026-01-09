@@ -1,6 +1,6 @@
 <!-- chat_template.html for YaOG -->
-<!-- Version: 4.1.7 (Regenerate Fix) -->
-<!-- Description: Ensures Regenerate button appears on the latest answer after streaming finishes. -->
+<!-- Version: 5.2.1 (Refined Slate - Darker Chat) -->
+<!-- Description: Matches the #E5E7EB Cool Gray theme of the main app. -->
 
 <!DOCTYPE html>
 <html>
@@ -9,48 +9,70 @@
     <title>Chat View</title>
     <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
     <style>
+        :root {
+            --main-font: "Segoe UI", "Inter", Roboto, sans-serif;
+            --bg-color: #E5E7EB; /* Slightly darker Cool Gray Background */
+            --text-color: #1F2937; /* Charcoal */
+            --user-bg: #DBEAFE; /* Soft Blue-200 */
+            --user-text: #1E3A8A; /* Dark Blue Text */
+            --assistant-bg: #FFFFFF; /* Pure White Card */
+            --assistant-border: #D1D5DB; /* Slightly darker border for contrast */
+            --code-bg: #111827; /* Dark Slate for Code */
+        }
+
         body {
-            background-color: #ffffff;
-            color: #000000;
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-            font-size: 16px;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            font-family: var(--main-font);
+            font-size: 15px;
             margin: 0;
-            padding: 15px;
+            padding: 20px;
+            overflow-y: auto;
         }
 
         #chat-container {
             display: flex;
             flex-direction: column;
-            padding-bottom: 20px;
+            padding-bottom: 40px;
+            max-width: 900px;
+            margin: 0 auto;
         }
 
         .message {
-            padding: 15px;
-            border-radius: 8px;
-            margin-bottom: 15px;
-            max-width: 85%;
-            line-height: 1.5;
+            padding: 16px 24px;
+            border-radius: 12px;
+            margin-bottom: 24px;
+            line-height: 1.6;
             position: relative;
-            box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+            box-shadow: 0 1px 2px rgba(0,0,0,0.05); /* Subtle depth */
         }
 
         .user {
-            background-color: #e3f2fd;
+            background-color: var(--user-bg);
+            color: var(--user-text);
             align-self: flex-end;
-            color: #000000;
+            max-width: 85%;
+            border-bottom-right-radius: 2px;
+            border: 1px solid #BFDBFE;
         }
 
         .assistant {
-            background-color: #f5f5f5;
+            background-color: var(--assistant-bg);
             align-self: flex-start;
-            color: #000000;
+            color: var(--text-color);
+            max-width: 95%;
+            width: 100%;
+            border-bottom-left-radius: 2px;
+            border: 1px solid var(--assistant-border);
         }
 
         .thinking {
-            background-color: #f0f0f0;
+            background-color: transparent;
             align-self: flex-start;
-            color: #666;
+            color: #6B7280;
             font-style: italic;
+            border: 1px dashed #D1D5DB;
+            box-shadow: none;
             animation: pulse 1.5s infinite ease-in-out;
         }
 
@@ -64,47 +86,54 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 8px;
-            border-bottom: 1px solid rgba(0,0,0,0.1);
-            padding-bottom: 5px;
+            margin-bottom: 12px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid rgba(0,0,0,0.05);
+            font-size: 0.85em;
+            color: #6B7280;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            font-weight: 700;
         }
 
-        .message-header strong {
-            color: #333333;
+        .user .message-header {
+            color: #1E40AF;
+            border-bottom-color: rgba(30, 58, 138, 0.1);
         }
 
         .btn-group {
             display: flex;
-            gap: 5px;
+            gap: 8px;
+            opacity: 0.0; /* Hidden until hover for cleaner look */
+            transition: opacity 0.2s;
+        }
+
+        .message:hover .btn-group {
+            opacity: 1.0;
         }
 
         .action-btn {
-            background-color: #ffffff;
-            border: 1px solid #ccc;
-            color: #555;
+            background-color: #FFFFFF;
+            border: 1px solid #D1D5DB;
+            color: #4B5563;
             border-radius: 4px;
             cursor: pointer;
-            font-size: 12px;
+            font-size: 11px;
             padding: 2px 8px;
-            transition: all 0.2s;
+            font-family: var(--main-font);
+            transition: all 0.1s;
         }
 
         .action-btn:hover {
-            background-color: #eee;
-            color: #000;
-            border-color: #999;
-        }
-
-        .copied {
-            background-color: #e8f5e9 !important;
-            color: #2e7d32 !important;
-            border-color: #2e7d32 !important;
+            background-color: #F3F4F6;
+            color: #111827;
+            border-color: #9CA3AF;
         }
 
         .danger-btn:hover {
-            background-color: #ffebee;
-            color: #d32f2f;
-            border-color: #d32f2f;
+            background-color: #FEF2F2;
+            color: #DC2626;
+            border-color: #FCA5A5;
         }
 
         .content-body {
@@ -112,17 +141,18 @@
             word-wrap: break-word;
         }
 
-        /* Edit Mode Styles */
+        /* Edit Mode */
         .edit-area {
             width: 100%;
             min-height: 100px;
             font-family: inherit;
             font-size: inherit;
-            padding: 5px;
-            margin-bottom: 5px;
-            border: 1px solid #ccc;
-            border-radius: 4px;
+            padding: 10px;
+            margin-bottom: 10px;
+            border: 1px solid #2563EB;
+            border-radius: 6px;
             resize: vertical;
+            outline: none;
         }
 
         .edit-controls {
@@ -131,35 +161,68 @@
             gap: 10px;
         }
 
-        .save-btn { background-color: #4caf50; color: white; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer; }
-        .cancel-btn { background-color: #f44336; color: white; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer; }
+        .save-btn { background-color: #2563EB; color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; }
+        .cancel-btn { background-color: #EF4444; color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; }
 
         .attachment-indicator {
-            color: #555;
-            font-family: sans-serif;
-            font-size: 0.9em;
-            margin-top: 10px;
-            display: block;
-            background-color: rgba(0,0,0,0.05);
-            padding: 4px;
+            color: #4B5563;
+            font-size: 0.85em;
+            margin-top: 12px;
+            display: inline-block;
+            background-color: #F3F4F6;
+            padding: 4px 8px;
             border-radius: 4px;
-            border: 1px dashed #aaa;
+            border: 1px solid #E5E7EB;
+            margin-right: 5px;
+            font-weight: 600;
         }
 
+        /* Markdown Elements */
         .content-body code {
-            background-color: #eee;
-            color: #d63384;
-            padding: 2px 4px;
-            border-radius: 3px;
-            font-family: monospace;
+            background-color: #F3F4F6;
+            color: #DC2626;
+            padding: 2px 5px;
+            border-radius: 4px;
+            font-family: "Consolas", "Monaco", monospace;
+            font-size: 0.9em;
+            border: 1px solid #E5E7EB;
         }
         
         .content-body pre {
-            background-color: #2d2d2d;
-            color: #f8f8f2;
-            padding: 10px;
-            border-radius: 5px;
+            background-color: var(--code-bg);
+            color: #E5E7EB;
+            padding: 15px;
+            border-radius: 8px;
             overflow-x: auto;
+            margin: 15px 0;
+            border: 1px solid #374151;
+        }
+
+        .content-body pre code {
+            background-color: transparent;
+            color: inherit;
+            padding: 0;
+            border: none;
+            font-size: 0.9em;
+        }
+
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            margin: 15px 0;
+            font-size: 0.95em;
+        }
+        
+        th, td {
+            border: 1px solid #E5E7EB;
+            padding: 10px;
+            text-align: left;
+        }
+        
+        th {
+            background-color: #F9FAFB;
+            font-weight: 700;
+            color: #374151;
         }
     </style>
 </head>
@@ -231,12 +294,10 @@
             if (currentContentDiv) {
                 currentContentDiv.innerHTML = htmlContent;
                 
-                // Inject Regenerate button for the just-finished Assistant message
                 const messageDiv = currentContentDiv.closest('.message');
                 if (messageDiv && messageDiv.classList.contains('assistant')) {
                     const btnGroup = messageDiv.querySelector('.btn-group');
                     if (btnGroup) {
-                        // Extract index from ID "msg-123"
                         const idParts = messageDiv.id.split('-');
                         const index = parseInt(idParts[1]);
 
@@ -249,7 +310,6 @@
                             }
                         };
 
-                        // Insert before the Delete button (which is usually the last child)
                         if (btnGroup.lastChild) {
                             btnGroup.insertBefore(regenBtn, btnGroup.lastChild);
                         } else {
@@ -279,25 +339,17 @@
             const btnGroup = document.createElement('div');
             btnGroup.classList.add('btn-group');
 
-            // Copy Button
             const copyBtn = document.createElement('button');
             copyBtn.textContent = "Copy";
             copyBtn.classList.add('action-btn');
             copyBtn.onclick = function() {
                 if (backendProxy) backendProxy.copy_message(index);
-                
-                // Visual Feedback
                 const originalText = copyBtn.textContent;
                 copyBtn.textContent = "✓";
-                copyBtn.classList.add('copied');
-                setTimeout(() => {
-                    copyBtn.textContent = originalText;
-                    copyBtn.classList.remove('copied');
-                }, 2000);
+                setTimeout(() => { copyBtn.textContent = originalText; }, 2000);
             };
             btnGroup.appendChild(copyBtn);
 
-            // Edit Button (User only)
             if (role === 'user' && isFinal) {
                 const editBtn = document.createElement('button');
                 editBtn.textContent = "Edit";
@@ -306,8 +358,6 @@
                 btnGroup.appendChild(editBtn);
             }
 
-            // Regenerate Button (Assistant only)
-            // Note: This handles history loading. The live streaming case is handled in finalize_message.
             if (role === 'assistant' && isFinal) {
                 const regenBtn = document.createElement('button');
                 regenBtn.textContent = "Regenerate";
@@ -320,7 +370,6 @@
                 btnGroup.appendChild(regenBtn);
             }
 
-            // Delete Button (All messages)
             const delBtn = document.createElement('button');
             delBtn.textContent = "Delete";
             delBtn.classList.add('action-btn', 'danger-btn');
