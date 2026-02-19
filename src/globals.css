@@ -1,0 +1,96 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── CSS custom properties (set by React from settings) ── */
+:root {
+  --font-chat: 'Literata', Georgia, serif;
+  --font-ui: 'DM Sans', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', Consolas, monospace;
+  --size-chat: 16.5px;
+  --size-ui: 13px;
+  --line-height-chat: 1.78;
+}
+
+/* ── Base reset ── */
+* { box-sizing: border-box; }
+html, body, #root { height: 100%; margin: 0; padding: 0; }
+
+/* Apply UI font globally */
+body {
+  font-family: var(--font-ui);
+  font-size: var(--size-ui);
+}
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.16); }
+
+/* ── Markdown prose inside messages ── */
+.prose-chat {
+  font-family: var(--font-chat);
+  font-size: var(--size-chat);
+  line-height: var(--line-height-chat);
+}
+.prose-chat h1 { @apply text-2xl font-bold text-text-bright mt-6 mb-3; font-family: var(--font-ui); }
+.prose-chat h2 { @apply text-xl font-bold text-text-bright mt-5 mb-2; font-family: var(--font-ui); }
+.prose-chat h3 { @apply text-lg font-bold text-text-bright mt-4 mb-2; font-family: var(--font-ui); }
+.prose-chat p  { @apply my-2; }
+.prose-chat ul, .prose-chat ol { @apply pl-6 my-2; }
+.prose-chat li { @apply my-1; }
+.prose-chat strong { @apply text-text-bright font-bold; }
+.prose-chat em { @apply italic; }
+.prose-chat a { @apply text-accent underline decoration-accent/30 hover:decoration-accent; }
+
+.prose-chat blockquote {
+  @apply border-l-2 border-accent/40 pl-4 my-3 italic text-text-muted;
+}
+.prose-chat hr {
+  @apply border-border my-6;
+}
+
+/* Inline code */
+.prose-chat code {
+  font-family: var(--font-mono);
+  @apply bg-bg-elevated text-accent px-1.5 py-0.5 rounded border border-border;
+  font-size: 0.88em;
+}
+/* Code blocks */
+.prose-chat pre {
+  @apply bg-[#0B0D12] rounded-lg p-4 my-3 overflow-x-auto border border-border leading-relaxed;
+  font-size: 0.88em;
+}
+.prose-chat pre code {
+  font-family: var(--font-mono);
+  @apply bg-transparent border-0 p-0 text-inherit rounded-none;
+}
+
+/* Tables */
+.prose-chat table { @apply w-full border-collapse my-4; font-family: var(--font-ui); font-size: calc(var(--size-ui) * 0.92); }
+.prose-chat th { @apply border border-border bg-bg-surface text-accent font-bold p-2.5 text-left uppercase tracking-wide; font-size: calc(var(--size-ui) * 0.85); }
+.prose-chat td { @apply border border-border p-2.5; }
+.prose-chat tr:nth-child(even) { background: rgba(255,255,255,0.015); }
+
+/* ── Input textarea uses chat font ── */
+.input-chat {
+  font-family: var(--font-chat);
+  font-size: calc(var(--size-chat) * 0.9);
+}
+
+/* ── Mono elements ── */
+
+/* Highlight.js base (dark) */
+.hljs { color: #ABB2BF; }
+.hljs-keyword { color: #C678DD; }
+.hljs-string { color: #98C379; }
+.hljs-number { color: #D19A66; }
+.hljs-comment { color: #5C6370; font-style: italic; }
+.hljs-function { color: #61AFEF; }
+.hljs-built_in { color: #E5C07B; }
+.hljs-title { color: #61AFEF; }
+.hljs-attr { color: #D19A66; }
+.hljs-params { color: #ABB2BF; }
+.hljs-literal { color: #56B6C2; }
+.hljs-type { color: #E5C07B; }

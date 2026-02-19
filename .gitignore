@@ -1,0 +1,41 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+dist-electron/
+release/
+
+# Electron-builder
+*.AppImage
+*.deb
+*.rpm
+*.snap
+*.blockmap
+builder-effective-config.yaml
+
+# Database & user data
+*.db
+*.db-journal
+
+# Environment / secrets
+.env
+.env.*
+
+# Editor / OS
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+*.code-workspace
+
+# Logs
+*.log
+npm-debug.log*
+
+# Misc
+*.tgz
+.cache/
