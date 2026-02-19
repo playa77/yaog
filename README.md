@@ -77,7 +77,7 @@ Your old database at `~/.or-client/or-client.db` is auto-detected and copied to 
 npm run build
 ```
 
-Produces AppImage and .deb in `release/`.
+Produces AppImage and .deb in `dist/`.
 
 ## License
 
