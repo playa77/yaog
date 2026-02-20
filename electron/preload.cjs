@@ -12,13 +12,14 @@ contextBridge.exposeInMainWorld('api', {
   convImport:  (json)          => ipcRenderer.invoke('conv:import', json),
 
   // Chat
-  chatSend:       (text, modelId, temp, sysPrompt, opts) => ipcRenderer.invoke('chat:send', text, modelId, temp, sysPrompt, opts),
-  chatStop:       ()                                      => ipcRenderer.invoke('chat:stop'),
-  chatEdit:       (index, content, modelId, temp, opts)   => ipcRenderer.invoke('chat:edit', index, content, modelId, temp, opts),
-  chatRegenerate: (index, modelId, temp, opts)            => ipcRenderer.invoke('chat:regenerate', index, modelId, temp, opts),
-  chatDeleteMsg:  (index)                                 => ipcRenderer.invoke('chat:deleteMsg', index),
-  chatGetMessages: ()                                     => ipcRenderer.invoke('chat:getMessages'),
-  chatTokenCount: ()                                      => ipcRenderer.invoke('chat:tokenCount'),
+  chatSend:         (text, modelId, temp, sysPrompt, opts) => ipcRenderer.invoke('chat:send', text, modelId, temp, sysPrompt, opts),
+  chatStop:         ()                                      => ipcRenderer.invoke('chat:stop'),
+  chatEdit:         (index, content, modelId, temp, opts)   => ipcRenderer.invoke('chat:edit', index, content, modelId, temp, opts),
+  chatRegenerate:   (index, modelId, temp, opts)            => ipcRenderer.invoke('chat:regenerate', index, modelId, temp, opts),
+  chatDeleteMsg:    (index)                                 => ipcRenderer.invoke('chat:deleteMsg', index),
+  chatGetMessages:  ()                                      => ipcRenderer.invoke('chat:getMessages'),
+  chatGetFullMessages: ()                                   => ipcRenderer.invoke('chat:getFullMessages'),
+  chatTokenCount:   ()                                      => ipcRenderer.invoke('chat:tokenCount'),
 
   // Models
   modelsList:    ()                    => ipcRenderer.invoke('models:list'),
@@ -34,14 +35,17 @@ contextBridge.exposeInMainWorld('api', {
   promptsDelete: (id)                  => ipcRenderer.invoke('prompts:delete', id),
 
   // Settings
-  settingsGet:      ()                 => ipcRenderer.invoke('settings:get'),
-  settingsSet:      (key, val)         => ipcRenderer.invoke('settings:set', key, val),
+  settingsGet:       ()                => ipcRenderer.invoke('settings:get'),
+  settingsSet:       (key, val)        => ipcRenderer.invoke('settings:set', key, val),
   settingsGetApiKey: ()                => ipcRenderer.invoke('settings:getApiKey'),
   settingsSaveApiKey: (key)            => ipcRenderer.invoke('settings:saveApiKey', key),
 
+  // Clipboard (main process — works reliably in Electron)
+  clipboardWrite:    (text)            => ipcRenderer.invoke('clipboard:write', text),
+
   // Dialogs
-  dialogOpenFiles: ()                  => ipcRenderer.invoke('dialog:openFiles'),
-  dialogSaveFile:  (name, content)     => ipcRenderer.invoke('dialog:saveFile', name, content),
+  dialogOpenFiles:  ()                 => ipcRenderer.invoke('dialog:openFiles'),
+  dialogSaveFile:   (name, content)    => ipcRenderer.invoke('dialog:saveFile', name, content),
   dialogImportFile: ()                 => ipcRenderer.invoke('dialog:importFile'),
 
   // Stream events (main → renderer)

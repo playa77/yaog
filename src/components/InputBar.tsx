@@ -47,7 +47,7 @@ export default function InputBar({
     return (
       <div className="border-t border-border bg-bg-surface px-4 py-3 shrink-0">
         <button onClick={onOpenSettings}
-                className="w-full flex items-center justify-center gap-2 py-3 rounded-lg bg-accent/10 border border-accent/20 text-accent font-sans font-semibold text-sm hover:bg-accent/20 transition-colors">
+                className="w-full flex items-center justify-center gap-2 py-3 rounded-lg bg-accent/10 border border-accent/20 text-accent font-sans font-semibold fs-ui-sm hover:bg-accent/20 transition-colors">
           <AlertCircle size={16} />
           Set your OpenRouter API key to start
         </button>
@@ -61,7 +61,7 @@ export default function InputBar({
       {stagedFiles.length > 0 && (
         <div className="flex flex-wrap gap-2 mb-2">
           {stagedFiles.map(f => (
-            <span key={f.name} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-bg-elevated border border-border text-xs font-sans text-text-muted">
+            <span key={f.name} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-bg-elevated border border-border fs-ui-xs font-sans text-text-muted">
               📎 {f.name}
               <button onClick={() => onRemoveFile(f.name)} className="text-danger/60 hover:text-danger">
                 <X size={12} />

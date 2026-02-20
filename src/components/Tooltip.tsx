@@ -32,10 +32,9 @@ export default function Tooltip({ text, children, position = 'top' }: Props) {
       ? wr.top - tip.height - 6
       : wr.bottom + 6
 
-    // Clamp to viewport
     if (x < 4) x = 4
     if (x + tip.width > window.innerWidth - 4) x = window.innerWidth - tip.width - 4
-    if (y < 4) { y = wr.bottom + 6 } // flip to bottom if clipped at top
+    if (y < 4) { y = wr.bottom + 6 }
 
     setCoords({ x, y })
   }, [visible, position])
@@ -54,7 +53,7 @@ export default function Tooltip({ text, children, position = 'top' }: Props) {
       {visible && (
         <div
           ref={tipRef}
-          className="fixed z-[9999] px-2.5 py-1 rounded-md bg-[#2A2D3A] text-text-bright text-xs font-sans whitespace-nowrap shadow-lg border border-white/[0.06] pointer-events-none animate-fade-in"
+          className="fixed z-[9999] px-2.5 py-1 rounded-md bg-[#2A2D3A] text-text-bright fs-ui-xs font-sans whitespace-nowrap shadow-lg border border-white/[0.06] pointer-events-none animate-fade-in"
           style={{ left: coords.x, top: coords.y }}
         >
           {text}

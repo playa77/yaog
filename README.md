@@ -1,6 +1,6 @@
 # YaOG v7 — Yet another OpenRouter GUI
 
-Immersive AI chat client built for exploring and working with LLM models on openrouter.ai. Dark ebook-reader aesthetic, modern web stack.
+Immersive AI chat client built for solo & group RPG. Dark ebook-reader aesthetic, modern web stack.
 
 ## Stack
 
@@ -77,7 +77,7 @@ Your old database at `~/.or-client/or-client.db` is auto-detected and copied to 
 npm run build
 ```
 
-Produces AppImage and .deb in `dist/`.
+Produces AppImage and .deb in `release/`.
 
 ## License
 

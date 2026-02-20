@@ -9,6 +9,7 @@ interface FontSettings {
   ui_font_size: number
   ui_font_family: string
   mono_font_family: string
+  mono_font_size: number
 }
 
 interface Props {
@@ -45,7 +46,7 @@ export default function SettingsSheet({ open, onClose, tab, onTabChange, models,
       <div className="relative m-auto w-full max-w-2xl max-h-[85vh] bg-bg-surface border border-border rounded-2xl shadow-2xl flex flex-col overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-border shrink-0">
-          <h2 className="text-text-bright font-bold text-lg">Settings</h2>
+          <h2 className="text-text-bright font-bold fs-ui-2xl">Settings</h2>
           <button onClick={onClose} className="p-1.5 rounded-md text-text-muted hover:text-text-bright hover:bg-bg-hover">
             <X size={18} />
           </button>
@@ -58,7 +59,7 @@ export default function SettingsSheet({ open, onClose, tab, onTabChange, models,
               <button
                 key={t.id}
                 onClick={() => onTabChange(t.id)}
-                className={`w-full text-left px-5 py-2.5 text-sm transition-colors ${
+                className={`w-full text-left px-5 py-2.5 fs-ui-sm transition-colors ${
                   tab === t.id
                     ? 'text-accent bg-accent-dim border-l-2 border-accent font-semibold'
                     : 'text-text-muted hover:text-text hover:bg-bg-elevated'
@@ -86,26 +87,39 @@ export default function SettingsSheet({ open, onClose, tab, onTabChange, models,
 // ── General Tab ──
 function GeneralTab() {
   const [timeout, setTimeout_] = useState(360)
+  const [confirmClose, setConfirmClose] = useState(true)
 
   useEffect(() => {
-    window.api.settingsGet().then(s => { setTimeout_(s.api_timeout) })
+    window.api.settingsGet().then(s => {
+      setTimeout_(s.api_timeout)
+      setConfirmClose(s.confirm_close !== false)
+    })
   }, [])
 
   return (
     <div className="space-y-6">
-      <h3 className="text-text-bright font-semibold text-base">General</h3>
+      <h3 className="text-text-bright font-semibold fs-ui-xl">General</h3>
 
       <div>
-        <label className="block text-sm text-text-muted mb-1">API Timeout</label>
+        <label className="block fs-ui-sm text-text-muted mb-1">API Timeout</label>
         <input type="number" min={10} max={600} value={timeout}
                onChange={e => { const v = parseInt(e.target.value) || 360; setTimeout_(v); window.api.settingsSet('api_timeout', v) }}
-               className="w-24 bg-bg-elevated text-text-bright border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-accent" />
-        <span className="text-text-muted text-xs ml-2">seconds</span>
+               className="w-24 bg-bg-elevated text-text-bright border border-border rounded-lg px-3 py-2 fs-ui-sm focus:outline-none focus:border-accent" />
+        <span className="text-text-muted fs-ui-xs ml-2">seconds</span>
+      </div>
+
+      <div>
+        <label className="flex items-center gap-2.5 cursor-pointer select-none">
+          <input type="checkbox" checked={confirmClose}
+                 onChange={e => { setConfirmClose(e.target.checked); window.api.settingsSet('confirm_close', e.target.checked) }}
+                 className="accent-accent w-4 h-4" />
+          <span className="fs-ui-sm text-text-muted">Confirm before closing the app</span>
+        </label>
       </div>
 
       <div className="pt-4 border-t border-border">
-        <p className="text-text-muted text-xs">
-          Data stored in <code className="text-accent font-mono">~/.yaog/</code>
+        <p className="text-text-muted fs-ui-xs">
+          Data stored in <code className="text-accent fs-mono-sm">~/.yaog/</code>
         </p>
       </div>
     </div>
@@ -125,6 +139,7 @@ const DEFAULTS: FontSettings = {
   ui_font_size: 13,
   ui_font_family: 'DM Sans',
   mono_font_family: 'JetBrains Mono',
+  mono_font_size: 14,
 }
 
 // Load a Google Font on demand
@@ -160,10 +175,10 @@ function FontsTab({ fontSettings, onFontSettingsChange }: { fontSettings: FontSe
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h3 className="text-text-bright font-semibold text-base">Font Settings</h3>
+        <h3 className="text-text-bright font-semibold fs-ui-xl">Font Settings</h3>
         <Tooltip text="Reset all to defaults">
           <button onClick={resetAll}
-                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs text-text-muted hover:text-accent hover:bg-accent-dim transition-colors">
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg fs-ui-xs text-text-muted hover:text-accent hover:bg-accent-dim transition-colors">
             <RotateCcw size={12} /> Reset to defaults
           </button>
         </Tooltip>
@@ -199,15 +214,17 @@ function FontsTab({ fontSettings, onFontSettingsChange }: { fontSettings: FontSe
         previewText="New Chat · Settings · Temperature 0.70 · Web Search"
       />
 
-      {/* Mono font */}
+      {/* Mono font — NOW WITH SIZE CONTROL */}
       <FontSection
         label="Code / Monospace"
         description="Code blocks, inline code, token counts, model IDs."
         fontFamily={fontSettings.mono_font_family}
-        fontSize={undefined}
+        fontSize={fontSettings.mono_font_size}
         fontOptions={MONO_FONTS}
         allowCustom
         onFamilyChange={v => update('mono_font_family', v)}
+        onSizeChange={v => update('mono_font_size', v)}
+        sizeMin={9} sizeMax={24} sizeStep={0.5}
         previewFont={fontSettings.mono_font_family}
         previewText='const adventure = await openDoor("ancient_ruins");'
       />
@@ -249,14 +266,14 @@ function FontSection({
   return (
     <div className="p-4 rounded-xl bg-bg-elevated/50 border border-border space-y-3">
       <div>
-        <div className="text-sm text-text-bright font-semibold">{label}</div>
-        <div className="text-xs text-text-muted mt-0.5">{description}</div>
+        <div className="fs-ui-sm text-text-bright font-semibold">{label}</div>
+        <div className="fs-ui-xs text-text-muted mt-0.5">{description}</div>
       </div>
 
       <div className="flex items-end gap-3 flex-wrap">
         {/* Family picker */}
         <div className="flex-1 min-w-[180px]">
-          <label className="block text-xs text-text-muted mb-1">Font Family</label>
+          <label className="block fs-ui-xs text-text-muted mb-1">Font Family</label>
           {customMode ? (
             <div className="flex gap-1.5">
               <input
@@ -265,10 +282,10 @@ function FontSection({
                 onBlur={handleCustomSubmit}
                 onKeyDown={e => { if (e.key === 'Enter') handleCustomSubmit() }}
                 placeholder="e.g. Atkinson Hyperlegible"
-                className="flex-1 bg-bg text-text-bright border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-accent"
+                className="flex-1 bg-bg text-text-bright border border-border rounded-lg px-3 py-2 fs-ui-sm focus:outline-none focus:border-accent"
               />
               <button onClick={() => { setCustomMode(false); onFamilyChange(fontOptions[0]) }}
-                      className="px-2 py-2 rounded-lg text-xs text-text-muted hover:text-text bg-bg border border-border">
+                      className="px-2 py-2 rounded-lg fs-ui-xs text-text-muted hover:text-text bg-bg border border-border">
                 List
               </button>
             </div>
@@ -277,7 +294,7 @@ function FontSection({
               <select
                 value={fontFamily}
                 onChange={e => onFamilyChange(e.target.value)}
-                className="flex-1 bg-bg text-text-bright border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-accent cursor-pointer"
+                className="flex-1 bg-bg text-text-bright border border-border rounded-lg px-3 py-2 fs-ui-sm focus:outline-none focus:border-accent cursor-pointer"
               >
                 {fontOptions.map(f => (
                   <option key={f} value={f}>{f}</option>
@@ -286,7 +303,7 @@ function FontSection({
               {allowCustom && (
                 <Tooltip text="Type a custom font name">
                   <button onClick={() => { setCustomMode(true); setCustomValue(fontFamily) }}
-                          className="px-2 py-2 rounded-lg text-xs text-text-muted hover:text-text bg-bg border border-border">
+                          className="px-2 py-2 rounded-lg fs-ui-xs text-text-muted hover:text-text bg-bg border border-border">
                     Custom
                   </button>
                 </Tooltip>
@@ -298,7 +315,7 @@ function FontSection({
         {/* Size slider */}
         {fontSize !== undefined && onSizeChange && (
           <div className="w-36">
-            <label className="block text-xs text-text-muted mb-1">
+            <label className="block fs-ui-xs text-text-muted mb-1">
               Size: <span className="text-accent font-semibold">{fontSize}px</span>
             </label>
             <input
@@ -308,7 +325,7 @@ function FontSection({
               onChange={e => onSizeChange(parseFloat(e.target.value))}
               className="w-full h-1.5 accent-accent cursor-pointer"
             />
-            <div className="flex justify-between text-[10px] text-text-muted mt-0.5">
+            <div className="flex justify-between fs-ui-3xs text-text-muted mt-0.5">
               <span>{sizeMin}px</span>
               <span>{sizeMax}px</span>
             </div>
@@ -318,7 +335,7 @@ function FontSection({
 
       {/* Live preview */}
       <div className="rounded-lg bg-bg p-3 border border-white/[0.03]">
-        <div className="text-[10px] text-text-muted uppercase tracking-wider mb-1.5 font-semibold">Preview</div>
+        <div className="fs-ui-3xs text-text-muted uppercase tracking-wider mb-1.5 font-semibold">Preview</div>
         <div style={{ fontFamily: `'${previewFont}', sans-serif`, fontSize: fontSize ? `${fontSize}px` : '14px' }}
              className="text-text-bright leading-relaxed">
           {previewText}
@@ -353,11 +370,11 @@ function ApiTab({ onApiKeyChange }: { onApiKeyChange: (set: boolean) => void }) 
 
   return (
     <div className="space-y-6">
-      <h3 className="text-text-bright font-semibold text-base">OpenRouter API Key</h3>
+      <h3 className="text-text-bright font-semibold fs-ui-xl">OpenRouter API Key</h3>
 
       {masked && (
-        <p className="text-sm text-text-muted">
-          Current key: <code className="text-accent font-mono">{masked}</code>
+        <p className="fs-ui-sm text-text-muted">
+          Current key: <code className="text-accent fs-mono-sm">{ masked}</code>
         </p>
       )}
 
@@ -368,7 +385,7 @@ function ApiTab({ onApiKeyChange }: { onApiKeyChange: (set: boolean) => void }) 
             value={key}
             onChange={e => setKey(e.target.value)}
             placeholder="sk-or-v1-..."
-            className="w-full bg-bg-elevated text-text-bright border border-border rounded-lg px-3 py-2.5 pr-10 text-sm font-mono focus:outline-none focus:border-accent"
+            className="w-full bg-bg-elevated text-text-bright border border-border rounded-lg px-3 py-2.5 pr-10 fs-ui-sm font-mono focus:outline-none focus:border-accent"
           />
           <button onClick={() => setShow(!show)}
                   className="absolute right-2 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-bright">
@@ -376,12 +393,12 @@ function ApiTab({ onApiKeyChange }: { onApiKeyChange: (set: boolean) => void }) 
           </button>
         </div>
         <button onClick={save}
-                className="px-4 py-2.5 rounded-lg bg-accent text-accent-text font-semibold text-sm hover:bg-accent-hover transition-colors flex items-center gap-1.5">
+                className="px-4 py-2.5 rounded-lg bg-accent text-accent-text font-semibold fs-ui-sm hover:bg-accent-hover transition-colors flex items-center gap-1.5">
           {saved ? <><Save size={14} /> Saved!</> : 'Save'}
         </button>
       </div>
 
-      <p className="text-xs text-text-muted">
+      <p className="fs-ui-xs text-text-muted">
         Get your key at <span className="text-accent">openrouter.ai/keys</span>
       </p>
     </div>
@@ -414,14 +431,14 @@ function ModelsTab({ models, onModelsChange }: { models: Model[]; onModelsChange
 
   return (
     <div className="space-y-4">
-      <h3 className="text-text-bright font-semibold text-base">Models</h3>
+      <h3 className="text-text-bright font-semibold fs-ui-xl">Models</h3>
 
       <div className="space-y-1">
         {models.map((m, i) => (
           <div key={m.id} className="flex items-center gap-2 py-2 px-3 rounded-lg hover:bg-bg-elevated group">
             <div className="flex-1 min-w-0">
-              <div className="text-sm text-text-bright truncate">{m.name}</div>
-              <div className="text-xs font-mono text-text-muted truncate">{m.id}</div>
+              <div className="fs-ui-sm text-text-bright truncate">{m.name}</div>
+              <div className="fs-mono-sm text-text-muted truncate">{m.id}</div>
             </div>
             <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
               <button onClick={() => move(i, 'up')} className="p-1 rounded text-text-muted hover:text-text-bright"><ChevronUp size={14} /></button>
@@ -434,11 +451,11 @@ function ModelsTab({ models, onModelsChange }: { models: Model[]; onModelsChange
 
       <div className="border-t border-border pt-4 space-y-2">
         <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="Display name"
-               className="w-full bg-bg-elevated text-text-bright border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-accent" />
+               className="w-full bg-bg-elevated text-text-bright border border-border rounded-lg px-3 py-2 fs-ui-sm focus:outline-none focus:border-accent" />
         <input value={newId} onChange={e => setNewId(e.target.value)} placeholder="Model ID (e.g. anthropic/claude-3.5-sonnet)"
-               className="w-full bg-bg-elevated text-text-bright border border-border rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:border-accent" />
+               className="w-full bg-bg-elevated text-text-bright border border-border rounded-lg px-3 py-2 fs-mono-sm focus:outline-none focus:border-accent" />
         <button onClick={add}
-                className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-accent text-accent-text text-sm font-semibold hover:bg-accent-hover transition-colors">
+                className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-accent text-accent-text fs-ui-sm font-semibold hover:bg-accent-hover transition-colors">
           <Plus size={14} /> Add Model
         </button>
       </div>
@@ -480,7 +497,7 @@ function PromptsTab({ prompts, onPromptsChange }: { prompts: SystemPrompt[]; onP
 
   return (
     <div className="space-y-4">
-      <h3 className="text-text-bright font-semibold text-base">System Prompts</h3>
+      <h3 className="text-text-bright font-semibold fs-ui-xl">System Prompts</h3>
 
       {/* List */}
       <div className="space-y-1 max-h-40 overflow-y-auto">
@@ -490,7 +507,7 @@ function PromptsTab({ prompts, onPromptsChange }: { prompts: SystemPrompt[]; onP
                className={`flex items-center justify-between py-2 px-3 rounded-lg cursor-pointer group transition-colors ${
                  selectedId === p.id ? 'bg-accent-dim text-accent' : 'hover:bg-bg-elevated text-text-muted hover:text-text'
                }`}>
-            <span className="text-sm truncate">{p.name}</span>
+            <span className="fs-ui-sm truncate">{p.name}</span>
             <button onClick={e => { e.stopPropagation(); remove(p.id) }}
                     className="p-1 rounded text-text-muted hover:text-danger opacity-0 group-hover:opacity-100">
               <Trash2 size={13} />
@@ -498,31 +515,31 @@ function PromptsTab({ prompts, onPromptsChange }: { prompts: SystemPrompt[]; onP
           </div>
         ))}
         {prompts.length === 0 && (
-          <p className="text-text-muted text-sm py-2">No prompts yet. Create one below.</p>
+          <p className="text-text-muted fs-ui-sm py-2">No prompts yet. Create one below.</p>
         )}
       </div>
 
       <div className="border-t border-border pt-4 space-y-3">
         <div className="flex items-center justify-between">
-          <span className="text-xs text-text-muted uppercase tracking-wide font-bold">
+          <span className="fs-ui-xs text-text-muted uppercase tracking-wide font-bold">
             {selectedId ? 'Edit Prompt' : 'New Prompt'}
           </span>
           {selectedId && (
-            <button onClick={reset} className="text-xs text-accent hover:underline">+ New instead</button>
+            <button onClick={reset} className="fs-ui-xs text-accent hover:underline">+ New instead</button>
           )}
         </div>
 
         <input value={name} onChange={e => setName(e.target.value)}
                placeholder="Name (e.g. Fantasy DM, Code Reviewer)"
-               className="w-full bg-bg-elevated text-text-bright border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-accent" />
+               className="w-full bg-bg-elevated text-text-bright border border-border rounded-lg px-3 py-2 fs-ui-sm focus:outline-none focus:border-accent" />
 
         <textarea value={content} onChange={e => setContent(e.target.value)}
                   placeholder="You are a seasoned dungeon master who creates immersive, dark fantasy worlds…"
                   rows={6}
-                  className="w-full bg-bg-elevated text-text-bright border border-border rounded-lg px-3 py-2.5 text-sm resize-y focus:outline-none focus:border-accent" />
+                  className="w-full bg-bg-elevated text-text-bright border border-border rounded-lg px-3 py-2.5 fs-ui-sm resize-y focus:outline-none focus:border-accent" />
 
         <button onClick={save}
-                className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-accent text-accent-text text-sm font-semibold hover:bg-accent-hover transition-colors">
+                className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-accent text-accent-text fs-ui-sm font-semibold hover:bg-accent-hover transition-colors">
           <Save size={14} /> {selectedId ? 'Update' : 'Save'}
         </button>
       </div>

@@ -1,10 +1,10 @@
 {
   "name": "yaog",
-  "version": "7.0.0",
+  "version": "7.1.1",
   "description": "Yet another OpenRouter GUI — immersive AI chat for solo & group RPG",
   "author": {
-  "name": "Dave Martin",
-  "email": "playa77@gmail.com"
+    "name": "Dave Martin",
+    "email": "playa77@gmail.com"
   },
   "homepage": "https://github.com/playa77/yaog",
   "type": "module",
@@ -19,7 +19,8 @@
   "dependencies": {
     "better-sqlite3": "^11.7.0",
     "marked": "^15.0.0",
-    "highlight.js": "^11.11.0"
+    "highlight.js": "^11.11.0",
+    "pdf-parse": "^1.1.1"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.12",
@@ -46,7 +47,7 @@
   "build": {
     "appId": "com.yaog.app",
     "productName": "YaOG",
-    "afterPack": "./electron/afterPack.cjs",
+    "afterPack": "./build/afterPack.cjs",
     "files": [
       "dist/**/*",
       "electron/**/*",
@@ -54,7 +55,8 @@
     ],
     "linux": {
       "target": ["AppImage", "deb"],
-      "category": "Utility"
+      "category": "Utility",
+      "executableName": "yaog"
     }
   }
 }

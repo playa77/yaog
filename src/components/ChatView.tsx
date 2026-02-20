@@ -36,38 +36,32 @@ export default function ChatView({
   const bottomRef = useRef<HTMLDivElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
 
-  // Auto-scroll
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, streamContent])
 
-  // Render streaming content
   let streamHtml = ''
   if (streamContent) {
     try {
       streamHtml = useMarkdown
         ? (marked.parse(streamContent) as string)
         : streamContent.replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>')
-    } catch {
-      streamHtml = streamContent
-    }
+    } catch { streamHtml = streamContent }
   }
 
   return (
     <div ref={containerRef} className="h-full overflow-y-auto">
       <div className="max-w-3xl mx-auto px-6 py-8 pb-20">
-        {/* Empty state */}
         {messages.length === 0 && !isStreaming && (
           <div className="flex flex-col items-center justify-center h-[60vh] text-center">
             <div className="text-4xl mb-4 opacity-20">⚔️</div>
-            <h2 className="text-text-muted font-sans text-lg font-semibold mb-2">Ready for adventure</h2>
-            <p className="text-text-muted/60 font-sans text-sm max-w-sm">
+            <h2 className="text-text-muted font-sans fs-ui-2xl font-semibold mb-2">Ready for adventure</h2>
+            <p className="text-text-muted/60 font-sans fs-ui-sm max-w-sm">
               Choose your model, set a system prompt for your world, and begin.
             </p>
           </div>
         )}
 
-        {/* Messages */}
         {messages.map(m => (
           <MessageBubble
             key={`${m.index}-${m.role}`}
@@ -76,13 +70,13 @@ export default function ChatView({
             onRegenerate={onRegenerate}
             onDelete={onDelete}
             disabled={isStreaming}
+            fullContent={m.fullRaw}
           />
         ))}
 
-        {/* Streaming message */}
         {isStreaming && (
           <div className="mb-2">
-            <div className="flex items-center gap-2 mb-2.5 font-sans text-[11px] font-bold uppercase tracking-[1.2px] text-text-muted">
+            <div className="flex items-center gap-2 mb-2.5 font-sans fs-ui-2xs font-bold uppercase tracking-[1.2px] text-text-muted">
               {streamModel}
             </div>
             {streamContent ? (
@@ -93,14 +87,11 @@ export default function ChatView({
           </div>
         )}
 
-        {/* Error toast */}
         {error && (
           <div className="flex items-start gap-3 p-4 rounded-lg bg-danger/10 border border-danger/20 mb-4 animate-fade-in">
             <AlertCircle size={18} className="text-danger shrink-0 mt-0.5" />
-            <p className="text-sm font-sans text-danger flex-1">{error}</p>
-            <button onClick={onDismissError} className="text-danger/60 hover:text-danger">
-              <X size={16} />
-            </button>
+            <p className="fs-ui-sm font-sans text-danger flex-1">{error}</p>
+            <button onClick={onDismissError} className="text-danger/60 hover:text-danger"><X size={16} /></button>
           </div>
         )}
 

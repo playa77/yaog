@@ -62,7 +62,7 @@ export default function Sidebar({
       <div className={`absolute top-0 left-0 bottom-0 w-80 bg-bg-surface border-r border-border z-40 flex flex-col transition-transform duration-250 ease-[cubic-bezier(0.16,1,0.3,1)] ${open ? 'translate-x-0' : '-translate-x-full'}`}>
         {/* Header */}
         <div className="flex items-center justify-between px-5 h-14 border-b border-border shrink-0">
-          <h2 className="text-text-bright font-sans font-bold text-base tracking-wide">Conversations</h2>
+          <h2 className="text-text-bright font-sans font-bold fs-ui-xl tracking-wide">Conversations</h2>
           <button onClick={onClose} className="p-1.5 rounded-md text-text-muted hover:text-text-bright hover:bg-bg-hover transition-colors">
             <X size={18} />
           </button>
@@ -71,7 +71,7 @@ export default function Sidebar({
         {/* Actions */}
         <div className="flex gap-2 px-4 py-3 border-b border-border">
           <button onClick={onNew}
-                  className="flex-1 flex items-center justify-center gap-2 py-2 rounded-lg bg-accent text-accent-text font-sans font-semibold text-sm hover:bg-accent-hover transition-colors">
+                  className="flex-1 flex items-center justify-center gap-2 py-2 rounded-lg bg-accent text-accent-text font-sans font-semibold fs-ui-sm hover:bg-accent-hover transition-colors">
             <Plus size={16} /> New Chat
           </button>
           <Tooltip text="Import JSON">
@@ -85,7 +85,7 @@ export default function Sidebar({
         {/* List */}
         <div className="flex-1 overflow-y-auto">
           {conversations.length === 0 && (
-            <p className="text-text-muted text-sm text-center py-8 font-sans">No conversations yet</p>
+            <p className="text-text-muted fs-ui-sm text-center py-8 font-sans">No conversations yet</p>
           )}
           {conversations.map(c => (
             <div
@@ -105,11 +105,11 @@ export default function Sidebar({
                   onChange={e => setEditTitle(e.target.value)}
                   onKeyDown={e => { if (e.key === 'Enter') confirmRename(); if (e.key === 'Escape') setEditingId(null) }}
                   onBlur={confirmRename}
-                  className="w-full bg-bg-elevated border border-accent rounded px-2 py-1 text-sm text-text-bright focus:outline-none"
+                  className="w-full bg-bg-elevated border border-accent rounded px-2 py-1 fs-ui-sm text-text-bright focus:outline-none"
                   onClick={e => e.stopPropagation()}
                 />
               ) : (
-                <span className="text-sm font-sans line-clamp-1">{c.title}</span>
+                <span className="fs-ui-sm font-sans line-clamp-1">{c.title}</span>
               )}
 
               {/* Hover actions */}

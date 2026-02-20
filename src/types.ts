@@ -43,6 +43,8 @@ export interface AppSettings {
   ui_font_size: number;
   ui_font_family: string;
   mono_font_family: string;
+  mono_font_size: number;
+  confirm_close: boolean;
   apiKeySet: boolean;
 }
 
@@ -64,6 +66,7 @@ declare global {
       chatRegenerate: (index: number, modelId: string, temp: number, opts: ChatOpts) => Promise<{ conversations: Conversation[]; tokenCount: number }>;
       chatDeleteMsg: (index: number) => Promise<{ messages: Message[]; tokenCount: number }>;
       chatGetMessages: () => Promise<Message[]>;
+      chatGetFullMessages: () => Promise<Message[]>;
       chatTokenCount: () => Promise<number>;
 
       modelsList: () => Promise<Model[]>;
@@ -81,6 +84,8 @@ declare global {
       settingsSet: (key: string, value: any) => Promise<boolean>;
       settingsGetApiKey: () => Promise<string>;
       settingsSaveApiKey: (key: string) => Promise<boolean>;
+
+      clipboardWrite: (text: string) => Promise<boolean>;
 
       dialogOpenFiles: () => Promise<FileAttachment[]>;
       dialogSaveFile: (name: string, content: string) => Promise<boolean>;
