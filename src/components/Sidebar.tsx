@@ -20,6 +20,7 @@ export default function Sidebar({
   const [editingId, setEditingId] = useState<number | null>(null)
   const [editTitle, setEditTitle] = useState('')
   const [contextId, setContextId] = useState<number | null>(null)
+  const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null)
 
   const startRename = (c: Conversation) => {
     setEditingId(c.id)
@@ -113,7 +114,7 @@ export default function Sidebar({
               )}
 
               {/* Hover actions */}
-              {editingId !== c.id && (
+              {editingId !== c.id && confirmDeleteId !== c.id && (
                 <div className="absolute right-3 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 flex gap-1 transition-opacity">
                   <button onClick={e => { e.stopPropagation(); startRename(c) }}
                           className="p-1 rounded hover:bg-bg-hover text-text-muted hover:text-text-bright">
@@ -123,9 +124,22 @@ export default function Sidebar({
                           className="p-1 rounded hover:bg-bg-hover text-text-muted hover:text-text-bright">
                     <Download size={13} />
                   </button>
-                  <button onClick={e => { e.stopPropagation(); if (confirm('Delete this conversation?')) onDelete(c.id) }}
+                  <button onClick={e => { e.stopPropagation(); setConfirmDeleteId(c.id) }}
                           className="p-1 rounded hover:bg-bg-hover text-text-muted hover:text-danger">
                     <Trash2 size={13} />
+                  </button>
+                </div>
+              )}
+              {/* Inline delete confirmation */}
+              {confirmDeleteId === c.id && (
+                <div className="absolute right-2 top-1/2 -translate-y-1/2 flex gap-1.5 animate-fade-in" onClick={e => e.stopPropagation()}>
+                  <button onClick={() => { onDelete(c.id); setConfirmDeleteId(null) }}
+                          className="px-2 py-0.5 rounded bg-danger text-white fs-ui-3xs font-bold hover:bg-danger/80">
+                    Delete
+                  </button>
+                  <button onClick={() => setConfirmDeleteId(null)}
+                          className="px-2 py-0.5 rounded bg-bg-elevated text-text-muted border border-border fs-ui-3xs font-semibold hover:bg-bg-hover">
+                    Cancel
                   </button>
                 </div>
               )}

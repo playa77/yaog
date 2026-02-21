@@ -39,6 +39,7 @@ export default function MessageBubble({ message, onEdit, onRegenerate, onDelete,
   const [editText, setEditText] = useState('')
   const [copied, setCopied] = useState(false)
   const [copyMenuOpen, setCopyMenuOpen] = useState(false)
+  const [confirmAction, setConfirmAction] = useState<'regenerate' | 'delete' | null>(null)
   const copyMenuRef = useRef<HTMLDivElement>(null)
 
   const isUser = message.role === 'user'
@@ -134,20 +135,37 @@ export default function MessageBubble({ message, onEdit, onRegenerate, onDelete,
           )}
           {!isUser && (
             <Tooltip text="Regenerate">
-              <button onClick={() => { if (confirm('Regenerate this response?')) onRegenerate(message.index) }} disabled={disabled}
+              <button onClick={() => setConfirmAction('regenerate')} disabled={disabled}
                       className="p-1 rounded text-text-muted hover:text-text-bright hover:bg-bg-hover transition-colors disabled:opacity-30">
                 <RefreshCw size={13} />
               </button>
             </Tooltip>
           )}
           <Tooltip text="Delete">
-            <button onClick={() => { if (confirm('Delete this and all following?')) onDelete(message.index) }} disabled={disabled}
+            <button onClick={() => setConfirmAction('delete')} disabled={disabled}
                     className="p-1 rounded text-text-muted hover:text-danger hover:bg-danger/10 transition-colors disabled:opacity-30">
               <Trash2 size={13} />
             </button>
           </Tooltip>
         </div>
       </div>
+
+      {/* Inline confirmation bar */}
+      {confirmAction && (
+        <div className="flex items-center gap-3 mb-2 py-2 px-3 rounded-lg bg-danger/10 border border-danger/20 animate-fade-in">
+          <span className="fs-ui-xs text-danger flex-1">
+            {confirmAction === 'regenerate' ? 'Regenerate this response?' : 'Delete this and all following?'}
+          </span>
+          <button onClick={() => { confirmAction === 'regenerate' ? onRegenerate(message.index) : onDelete(message.index); setConfirmAction(null) }}
+                  className="px-3 py-1 rounded-md bg-danger text-white fs-ui-xs font-bold hover:bg-danger/80 transition-colors">
+            {confirmAction === 'regenerate' ? 'Regenerate' : 'Delete'}
+          </button>
+          <button onClick={() => setConfirmAction(null)}
+                  className="px-3 py-1 rounded-md bg-bg-surface text-text-muted border border-border fs-ui-xs font-semibold hover:bg-bg-hover transition-colors">
+            Cancel
+          </button>
+        </div>
+      )}
 
       {/* Content */}
       {editing ? (

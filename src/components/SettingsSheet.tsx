@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { X, Plus, Trash2, ChevronUp, ChevronDown, Eye, EyeOff, Save, RotateCcw } from 'lucide-react'
+import { X, Plus, Trash2, ChevronUp, ChevronDown, Eye, EyeOff, Save, RotateCcw, Pencil } from 'lucide-react'
 import type { Model, SystemPrompt } from '../types'
 import Tooltip from './Tooltip'
 
@@ -409,6 +409,10 @@ function ApiTab({ onApiKeyChange }: { onApiKeyChange: (set: boolean) => void }) 
 function ModelsTab({ models, onModelsChange }: { models: Model[]; onModelsChange: (m: Model[]) => void }) {
   const [newName, setNewName] = useState('')
   const [newId, setNewId] = useState('')
+  const [editIdx, setEditIdx] = useState<number | null>(null)
+  const [editName, setEditName] = useState('')
+  const [editId, setEditId] = useState('')
+  const [confirmDeleteIdx, setConfirmDeleteIdx] = useState<number | null>(null)
 
   const add = async () => {
     if (!newName.trim() || !newId.trim()) return
@@ -418,10 +422,32 @@ function ModelsTab({ models, onModelsChange }: { models: Model[]; onModelsChange
     setNewId('')
   }
 
-  const remove = async (idx: number) => {
-    if (!confirm('Remove this model?')) return
-    const result = await window.api.modelsDelete(idx)
+  const startEdit = (idx: number) => {
+    setEditIdx(idx)
+    setEditName(models[idx].name)
+    setEditId(models[idx].id)
+    setConfirmDeleteIdx(null)
+  }
+
+  const cancelEdit = () => { setEditIdx(null); setEditName(''); setEditId('') }
+
+  const saveEdit = async () => {
+    if (editIdx === null || !editName.trim() || !editId.trim()) return
+    const result = await window.api.modelsUpdate(editIdx, editName.trim(), editId.trim())
     onModelsChange(result)
+    setEditIdx(null); setEditName(''); setEditId('')
+  }
+
+  const requestDelete = (idx: number) => {
+    setConfirmDeleteIdx(idx)
+    setEditIdx(null)
+  }
+
+  const confirmDelete = async () => {
+    if (confirmDeleteIdx === null) return
+    const result = await window.api.modelsDelete(confirmDeleteIdx)
+    onModelsChange(result)
+    setConfirmDeleteIdx(null)
   }
 
   const move = async (idx: number, dir: 'up' | 'down') => {
@@ -435,16 +461,65 @@ function ModelsTab({ models, onModelsChange }: { models: Model[]; onModelsChange
 
       <div className="space-y-1">
         {models.map((m, i) => (
-          <div key={m.id} className="flex items-center gap-2 py-2 px-3 rounded-lg hover:bg-bg-elevated group">
-            <div className="flex-1 min-w-0">
-              <div className="fs-ui-sm text-text-bright truncate">{m.name}</div>
-              <div className="fs-mono-sm text-text-muted truncate">{m.id}</div>
-            </div>
-            <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-              <button onClick={() => move(i, 'up')} className="p-1 rounded text-text-muted hover:text-text-bright"><ChevronUp size={14} /></button>
-              <button onClick={() => move(i, 'down')} className="p-1 rounded text-text-muted hover:text-text-bright"><ChevronDown size={14} /></button>
-              <button onClick={() => remove(i)} className="p-1 rounded text-text-muted hover:text-danger"><Trash2 size={14} /></button>
-            </div>
+          <div key={`${m.id}-${i}`}>
+            {editIdx === i ? (
+              /* ── Inline edit mode ── */
+              <div className="py-2 px-3 rounded-lg bg-bg-elevated border border-accent/40 space-y-2">
+                <input value={editName} onChange={e => setEditName(e.target.value)}
+                       autoFocus
+                       placeholder="Display name"
+                       className="w-full bg-bg text-text-bright border border-border rounded-lg px-3 py-1.5 fs-ui-sm focus:outline-none focus:border-accent" />
+                <input value={editId} onChange={e => setEditId(e.target.value)}
+                       placeholder="Model ID"
+                       className="w-full bg-bg text-text-bright border border-border rounded-lg px-3 py-1.5 fs-mono-sm focus:outline-none focus:border-accent" />
+                <div className="flex gap-2">
+                  <button onClick={saveEdit}
+                          className="px-3 py-1.5 rounded-md bg-accent text-accent-text fs-ui-xs font-bold hover:bg-accent-hover transition-colors">
+                    Save
+                  </button>
+                  <button onClick={cancelEdit}
+                          className="px-3 py-1.5 rounded-md bg-bg text-text-muted border border-border fs-ui-xs font-semibold hover:bg-bg-hover transition-colors">
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : confirmDeleteIdx === i ? (
+              /* ── Inline delete confirmation ── */
+              <div className="flex items-center gap-3 py-2 px-3 rounded-lg bg-danger/10 border border-danger/20">
+                <span className="fs-ui-sm text-danger flex-1">Delete "{m.name}"?</span>
+                <button onClick={confirmDelete}
+                        className="px-3 py-1 rounded-md bg-danger text-white fs-ui-xs font-bold hover:bg-danger/80 transition-colors">
+                  Delete
+                </button>
+                <button onClick={() => setConfirmDeleteIdx(null)}
+                        className="px-3 py-1 rounded-md bg-bg text-text-muted border border-border fs-ui-xs font-semibold hover:bg-bg-hover transition-colors">
+                  Cancel
+                </button>
+              </div>
+            ) : (
+              /* ── Normal display ── */
+              <div className="flex items-center gap-2 py-2 px-3 rounded-lg hover:bg-bg-elevated group cursor-pointer"
+                   onDoubleClick={() => startEdit(i)}>
+                <div className="flex-1 min-w-0">
+                  <div className="fs-ui-sm text-text-bright truncate">{m.name}</div>
+                  <div className="fs-mono-sm text-text-muted truncate">{m.id}</div>
+                </div>
+                <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <Tooltip text="Move up">
+                    <button onClick={() => move(i, 'up')} className="p-1 rounded text-text-muted hover:text-text-bright"><ChevronUp size={14} /></button>
+                  </Tooltip>
+                  <Tooltip text="Move down">
+                    <button onClick={() => move(i, 'down')} className="p-1 rounded text-text-muted hover:text-text-bright"><ChevronDown size={14} /></button>
+                  </Tooltip>
+                  <Tooltip text="Edit">
+                    <button onClick={() => startEdit(i)} className="p-1 rounded text-text-muted hover:text-accent"><Pencil size={14} /></button>
+                  </Tooltip>
+                  <Tooltip text="Delete">
+                    <button onClick={() => requestDelete(i)} className="p-1 rounded text-text-muted hover:text-danger"><Trash2 size={14} /></button>
+                  </Tooltip>
+                </div>
+              </div>
+            )}
           </div>
         ))}
       </div>
@@ -468,11 +543,13 @@ function PromptsTab({ prompts, onPromptsChange }: { prompts: SystemPrompt[]; onP
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [name, setName] = useState('')
   const [content, setContent] = useState('')
+  const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null)
 
   const select = (p: SystemPrompt) => {
     setSelectedId(p.id)
     setName(p.name)
     setContent(p.prompt_text)
+    setConfirmDeleteId(null)
   }
 
   const reset = () => {
@@ -489,10 +566,10 @@ function PromptsTab({ prompts, onPromptsChange }: { prompts: SystemPrompt[]; onP
   }
 
   const remove = async (id: number) => {
-    if (!confirm('Delete this prompt?')) return
     const result = await window.api.promptsDelete(id)
     onPromptsChange(result)
     if (selectedId === id) reset()
+    setConfirmDeleteId(null)
   }
 
   return (
@@ -502,16 +579,32 @@ function PromptsTab({ prompts, onPromptsChange }: { prompts: SystemPrompt[]; onP
       {/* List */}
       <div className="space-y-1 max-h-40 overflow-y-auto">
         {prompts.map(p => (
-          <div key={p.id}
-               onClick={() => select(p)}
-               className={`flex items-center justify-between py-2 px-3 rounded-lg cursor-pointer group transition-colors ${
-                 selectedId === p.id ? 'bg-accent-dim text-accent' : 'hover:bg-bg-elevated text-text-muted hover:text-text'
-               }`}>
-            <span className="fs-ui-sm truncate">{p.name}</span>
-            <button onClick={e => { e.stopPropagation(); remove(p.id) }}
-                    className="p-1 rounded text-text-muted hover:text-danger opacity-0 group-hover:opacity-100">
-              <Trash2 size={13} />
-            </button>
+          <div key={p.id}>
+            {confirmDeleteId === p.id ? (
+              <div className="flex items-center gap-3 py-2 px-3 rounded-lg bg-danger/10 border border-danger/20 animate-fade-in">
+                <span className="fs-ui-sm text-danger flex-1 truncate">Delete "{p.name}"?</span>
+                <button onClick={() => remove(p.id)}
+                        className="px-2.5 py-1 rounded-md bg-danger text-white fs-ui-xs font-bold hover:bg-danger/80 transition-colors">
+                  Delete
+                </button>
+                <button onClick={() => setConfirmDeleteId(null)}
+                        className="px-2.5 py-1 rounded-md bg-bg text-text-muted border border-border fs-ui-xs font-semibold hover:bg-bg-hover transition-colors">
+                  Cancel
+                </button>
+              </div>
+            ) : (
+              <div
+                onClick={() => select(p)}
+                className={`flex items-center justify-between py-2 px-3 rounded-lg cursor-pointer group transition-colors ${
+                  selectedId === p.id ? 'bg-accent-dim text-accent' : 'hover:bg-bg-elevated text-text-muted hover:text-text'
+                }`}>
+                <span className="fs-ui-sm truncate">{p.name}</span>
+                <button onClick={e => { e.stopPropagation(); setConfirmDeleteId(p.id) }}
+                        className="p-1 rounded text-text-muted hover:text-danger opacity-0 group-hover:opacity-100">
+                  <Trash2 size={13} />
+                </button>
+              </div>
+            )}
           </div>
         ))}
         {prompts.length === 0 && (
