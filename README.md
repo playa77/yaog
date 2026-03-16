@@ -70,7 +70,7 @@ src/
 - [x] Chat import/export (JSON)
 - [x] Token count estimate
 - [x] Temperature control
-- [x] Web search (:online) toggle
+- [x] Web search toggle (OpenRouter web plugin)
 - [x] Reasoning (CoT) toggle
 - [x] Full font customization — family and size for chat, UI, and monospace
 - [x] Close confirmation (togglable)

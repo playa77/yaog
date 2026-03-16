@@ -206,11 +206,11 @@ export default function App() {
     })
   }, [useMarkdown])
 
-  const selectedModelMetadata = modelMetadata[selectedModel.replace(':online', '')] || null
+  const selectedModelMetadata = modelMetadata[selectedModel] || null
   const reasoningConfig = useMemo(() => getReasoningUiConfig(selectedModelMetadata), [selectedModelMetadata])
 
   useEffect(() => {
-    const modelId = selectedModel.replace(':online', '')
+    const modelId = selectedModel
     if (!modelId) return
 
     async function refreshMetadata() {
@@ -361,9 +361,20 @@ export default function App() {
           <input type="checkbox" checked={useMarkdown} onChange={e => setUseMarkdown(e.target.checked)} className="accent-accent w-3.5 h-3.5" />
           Markdown
         </label>
-        <label className="flex items-center gap-1.5 text-text-muted hover:text-text cursor-pointer select-none">
-          <input type="checkbox" checked={useWebSearch} onChange={e => setUseWebSearch(e.target.checked)} className="accent-accent w-3.5 h-3.5" />
-          Web Search
+        <label className="flex items-center gap-2 text-text-muted hover:text-text cursor-pointer select-none">
+          <span>Web Search</span>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={useWebSearch}
+            aria-label="Toggle web search"
+            onClick={() => setUseWebSearch(v => !v)}
+            className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${useWebSearch ? 'bg-accent' : 'bg-bg-elevated border border-border'}`}
+          >
+            <span
+              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${useWebSearch ? 'translate-x-4' : 'translate-x-0.5'}`}
+            />
+          </button>
         </label>
         {reasoningConfig.mode === 'toggle' && (
           <label className="flex items-center gap-1.5 text-text-muted hover:text-text cursor-pointer select-none">
