@@ -18,6 +18,7 @@ const DATA_DIR = path.join(app.getPath('home'), '.yaog');
 const DB_PATH = path.join(DATA_DIR, 'yaog.db');
 const SETTINGS_PATH = path.join(DATA_DIR, 'settings.json');
 const MODELS_PATH = path.join(DATA_DIR, 'models.json');
+const MODEL_METADATA_CACHE_PATH = path.join(DATA_DIR, 'model-metadata.json');
 const ENV_PATH = path.join(DATA_DIR, '.env');
 
 function ensureDataDir() {
@@ -104,10 +105,110 @@ const DEFAULT_MODELS = [
 function loadModels() { try { if (fs.existsSync(MODELS_PATH)) { const d = JSON.parse(fs.readFileSync(MODELS_PATH, 'utf8')); return d.models || DEFAULT_MODELS; } } catch {} return [...DEFAULT_MODELS]; }
 function saveModels(m) { try { fs.writeFileSync(MODELS_PATH, JSON.stringify({ models: m }, null, 2)); } catch {} }
 let models = loadModels();
-let modelMetadata = {};
-async function fetchModelMetadata() {
-  const key = getApiKey(); if (!key) return;
-  try { const res = await fetch('https://openrouter.ai/api/v1/models', { headers: { 'Authorization': `Bearer ${key}` } }); if (res.ok) { const data = await res.json(); for (const m of (data.data || [])) modelMetadata[m.id] = m; } } catch (e) { console.error('[MODELS] Failed to fetch metadata:', e.message); }
+let modelMetadata = loadModelMetadataCache();
+const MODEL_METADATA_TTL_MS = 1000 * 60 * 60 * 6; // 6 hours
+let modelMetadataFetchedAt = Number(modelMetadata.__fetchedAt || 0) || 0;
+
+function loadModelMetadataCache() {
+  try {
+    if (fs.existsSync(MODEL_METADATA_CACHE_PATH)) {
+      const data = JSON.parse(fs.readFileSync(MODEL_METADATA_CACHE_PATH, 'utf8'));
+      if (data && typeof data === 'object') return data;
+    }
+  } catch {}
+  return {};
+}
+
+function saveModelMetadataCache() {
+  try {
+    modelMetadata.__fetchedAt = modelMetadataFetchedAt;
+    fs.writeFileSync(MODEL_METADATA_CACHE_PATH, JSON.stringify(modelMetadata, null, 2));
+  } catch {}
+}
+
+async function fetchModelMetadata(force = false) {
+  const key = getApiKey();
+  if (!key) return modelMetadata;
+  const isFresh = !force && modelMetadataFetchedAt > 0 && (Date.now() - modelMetadataFetchedAt) < MODEL_METADATA_TTL_MS;
+  if (isFresh) return modelMetadata;
+
+  try {
+    const res = await fetch('https://openrouter.ai/api/v1/models', {
+      headers: { 'Authorization': `Bearer ${key}` },
+    });
+    if (!res.ok) return modelMetadata;
+
+    const data = await res.json();
+    const incoming = {};
+    for (const m of (data.data || [])) {
+      if (m?.id) incoming[m.id] = m;
+    }
+    modelMetadata = { ...incoming };
+    modelMetadataFetchedAt = Date.now();
+    saveModelMetadataCache();
+  } catch (e) {
+    console.error('[MODELS] Failed to fetch metadata:', e.message);
+  }
+  return modelMetadata;
+}
+
+function extractReasoningCapabilities(metadata) {
+  const unsupported = { mode: 'none', levels: [], defaultLevel: null, paramMap: {} };
+  if (!metadata || typeof metadata !== 'object') return unsupported;
+
+  const caps = metadata.capabilities || {};
+  const reasoning = metadata.reasoning || caps.reasoning || caps.reasoning_config || {};
+  const supported = Boolean(
+    reasoning.supported ?? reasoning.enabled ?? caps.reasoning ?? metadata.supports_reasoning ?? false
+  );
+  if (!supported) return unsupported;
+
+  const alwaysOn = Boolean(reasoning.always_on || reasoning.required || reasoning.locked === true);
+  const levels = Array.isArray(reasoning.levels)
+    ? reasoning.levels.map(l => String(l))
+    : Array.isArray(reasoning.options)
+      ? reasoning.options.map(l => String(l))
+      : [];
+  const defaultLevel = reasoning.default_level ?? reasoning.default ?? (levels[0] || null);
+  const paramMap = reasoning.param_map && typeof reasoning.param_map === 'object' ? reasoning.param_map : {};
+
+  if (levels.length > 0) {
+    return { mode: 'levels', levels, defaultLevel, paramMap };
+  }
+  if (alwaysOn) {
+    return { mode: 'always_on', levels: [], defaultLevel: null, paramMap };
+  }
+  return { mode: 'toggle', levels: [], defaultLevel: null, paramMap };
+}
+
+function buildReasoningApiParams(metadata, reasoningState) {
+  const caps = extractReasoningCapabilities(metadata);
+  const mapped = {};
+  const map = caps.paramMap || {};
+  const state = reasoningState || { enabled: false, level: null };
+
+  if (caps.mode === 'none') return mapped;
+
+  if (caps.mode === 'always_on') {
+    mapped[map.toggle || 'include_reasoning'] = true;
+    return mapped;
+  }
+
+  if (caps.mode === 'toggle') {
+    mapped[map.toggle || 'include_reasoning'] = !!state.enabled;
+    return mapped;
+  }
+
+  if (caps.mode === 'levels') {
+    mapped[map.toggle || 'include_reasoning'] = !!state.enabled;
+    if (state.enabled) {
+      const key = map.level || 'reasoning_effort';
+      const level = state.level || caps.defaultLevel || caps.levels[0] || 'medium';
+      mapped[key] = level;
+    }
+  }
+
+  return mapped;
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -602,7 +703,8 @@ function registerIPC(win) {
     let effectiveModel = modelId;
     if (opts?.webSearch && !effectiveModel.endsWith(':online')) effectiveModel += ':online';
     if (!opts?.webSearch && effectiveModel.endsWith(':online')) effectiveModel = effectiveModel.replace(':online', '');
-    const extra = {}; if (opts?.reasoning) extra.include_reasoning = true;
+    const metadata = modelMetadata[effectiveModel] || modelMetadata[modelId] || null;
+    const extra = buildReasoningApiParams(metadata, opts?.reasoning);
 
     await streamResponse(win, effectiveModel, temp, extra);
     return { conversations: dbGetConversations(), tokenCount: estimateTokens() };
@@ -615,7 +717,8 @@ function registerIPC(win) {
     let effectiveModel = modelId;
     if (opts?.webSearch && !effectiveModel.endsWith(':online')) effectiveModel += ':online';
     if (!opts?.webSearch && effectiveModel.endsWith(':online')) effectiveModel = effectiveModel.replace(':online', '');
-    const extra = {}; if (opts?.reasoning) extra.include_reasoning = true;
+    const metadata = modelMetadata[effectiveModel] || modelMetadata[modelId] || null;
+    const extra = buildReasoningApiParams(metadata, opts?.reasoning);
     await streamResponse(win, effectiveModel, temp, extra);
     return { conversations: dbGetConversations(), tokenCount: estimateTokens() };
   });
@@ -625,7 +728,8 @@ function registerIPC(win) {
     let effectiveModel = modelId;
     if (opts?.webSearch && !effectiveModel.endsWith(':online')) effectiveModel += ':online';
     if (!opts?.webSearch && effectiveModel.endsWith(':online')) effectiveModel = effectiveModel.replace(':online', '');
-    const extra = {}; if (opts?.reasoning) extra.include_reasoning = true;
+    const metadata = modelMetadata[effectiveModel] || modelMetadata[modelId] || null;
+    const extra = buildReasoningApiParams(metadata, opts?.reasoning);
     await streamResponse(win, effectiveModel, temp, extra);
     return { conversations: dbGetConversations(), tokenCount: estimateTokens() };
   });
@@ -650,7 +754,13 @@ function registerIPC(win) {
   ipcMain.handle('models:update', (_, idx, name, id) => { if (idx >= 0 && idx < models.length) { models[idx] = { name, id }; saveModels(models); } return models; });
   ipcMain.handle('models:delete', (_, idx) => { if (idx >= 0 && idx < models.length) { models.splice(idx, 1); saveModels(models); } return models; });
   ipcMain.handle('models:move', (_, idx, dir) => { const t = dir === 'up' ? idx - 1 : idx + 1; if (t >= 0 && t < models.length) { [models[idx], models[t]] = [models[t], models[idx]]; saveModels(models); } return models; });
-  ipcMain.handle('models:metadata', () => modelMetadata);
+  ipcMain.handle('models:metadata', async (_, modelId = null) => {
+    const key = modelId ? String(modelId).replace(':online', '') : null;
+    const target = key ? modelMetadata[key] : null;
+    if (!target) await fetchModelMetadata(true);
+    if (key) return modelMetadata[key] || {};
+    return modelMetadata;
+  });
 
   // ── System Prompts ──
   ipcMain.handle('prompts:list', () => dbGetPrompts());

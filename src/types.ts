@@ -27,7 +27,10 @@ export interface SystemPrompt {
 
 export interface ChatOpts {
   webSearch?: boolean;
-  reasoning?: boolean;
+  reasoning?: {
+    enabled: boolean;
+    level?: string | null;
+  };
 }
 
 export interface FileAttachment {
@@ -74,7 +77,7 @@ declare global {
       modelsUpdate: (idx: number, name: string, id: string) => Promise<Model[]>;
       modelsDelete: (idx: number) => Promise<Model[]>;
       modelsMove: (idx: number, dir: 'up' | 'down') => Promise<Model[]>;
-      modelsMetadata: () => Promise<Record<string, any>>;
+      modelsMetadata: (modelId?: string | null) => Promise<Record<string, any>>;
 
       promptsList: () => Promise<SystemPrompt[]>;
       promptsSave: (id: number | null, name: string, text: string) => Promise<SystemPrompt[]>;
