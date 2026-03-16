@@ -27,7 +27,7 @@ contextBridge.exposeInMainWorld('api', {
   modelsUpdate:  (idx, name, id)       => ipcRenderer.invoke('models:update', idx, name, id),
   modelsDelete:  (idx)                 => ipcRenderer.invoke('models:delete', idx),
   modelsMove:    (idx, dir)            => ipcRenderer.invoke('models:move', idx, dir),
-  modelsMetadata: ()                   => ipcRenderer.invoke('models:metadata'),
+  modelsMetadata: (modelId = null)     => ipcRenderer.invoke('models:metadata', modelId),
 
   // System Prompts
   promptsList:   ()                    => ipcRenderer.invoke('prompts:list'),

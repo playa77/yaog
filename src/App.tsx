@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { Marked } from 'marked'
 import hljs from 'highlight.js'
 import type { Conversation, Message, Model, SystemPrompt, FileAttachment, ChatOpts } from './types'
@@ -72,6 +72,37 @@ export interface DisplayMessage {
   model: string
 }
 
+type ReasoningMode = 'none' | 'toggle' | 'always_on' | 'levels'
+
+interface ReasoningUiConfig {
+  mode: ReasoningMode
+  levels: string[]
+  defaultLevel: string | null
+}
+
+function getReasoningUiConfig(metadata: Record<string, any> | null): ReasoningUiConfig {
+  const unsupported: ReasoningUiConfig = { mode: 'none', levels: [], defaultLevel: null }
+  if (!metadata || typeof metadata !== 'object') return unsupported
+
+  const caps = (metadata.capabilities ?? {}) as Record<string, any>
+  const reasoning = (metadata.reasoning ?? caps.reasoning ?? caps.reasoning_config ?? {}) as Record<string, any>
+  const supported = Boolean(reasoning.supported ?? reasoning.enabled ?? caps.reasoning ?? metadata.supports_reasoning ?? false)
+  if (!supported) return unsupported
+
+  const levels = Array.isArray(reasoning.levels)
+    ? reasoning.levels.map((l: unknown) => String(l))
+    : Array.isArray(reasoning.options)
+      ? reasoning.options.map((l: unknown) => String(l))
+      : []
+  if (levels.length > 0) {
+    return { mode: 'levels', levels, defaultLevel: String(reasoning.default_level ?? reasoning.default ?? levels[0]) }
+  }
+
+  const alwaysOn = Boolean(reasoning.always_on || reasoning.required || reasoning.locked === true)
+  if (alwaysOn) return { mode: 'always_on', levels: [], defaultLevel: null }
+  return { mode: 'toggle', levels: [], defaultLevel: null }
+}
+
 export default function App() {
   // ── State ──
   const [conversations, setConversations] = useState<Conversation[]>([])
@@ -84,7 +115,9 @@ export default function App() {
   const [selectedPrompt, setSelectedPrompt] = useState<string | null>(null)
   const [useMarkdown, setUseMarkdown] = useState(true)
   const [useWebSearch, setUseWebSearch] = useState(false)
-  const [useReasoning, setUseReasoning] = useState(false)
+  const [reasoningEnabled, setReasoningEnabled] = useState(false)
+  const [reasoningLevel, setReasoningLevel] = useState<string | null>(null)
+  const [modelMetadata, setModelMetadata] = useState<Record<string, any>>({})
   const [isStreaming, setIsStreaming] = useState(false)
   const [streamContent, setStreamContent] = useState('')
   const [streamModel, setStreamModel] = useState('')
@@ -125,10 +158,10 @@ export default function App() {
   // ── Init ──
   useEffect(() => {
     async function init() {
-      const [convs, mdls, prms, settings] = await Promise.all([
-        window.api.convList(), window.api.modelsList(), window.api.promptsList(), window.api.settingsGet(),
+      const [convs, mdls, prms, settings, metadata] = await Promise.all([
+        window.api.convList(), window.api.modelsList(), window.api.promptsList(), window.api.settingsGet(), window.api.modelsMetadata(),
       ])
-      setConversations(convs); setModels(mdls); setPrompts(prms); setApiKeySet(settings.apiKeySet)
+      setConversations(convs); setModels(mdls); setPrompts(prms); setApiKeySet(settings.apiKeySet); setModelMetadata(metadata || {})
       if (mdls.length > 0) setSelectedModel(mdls[0].id)
       const fs = {
         chat_font_size: settings.chat_font_size ?? 16.5, chat_font_family: settings.chat_font_family ?? 'Literata',
@@ -173,7 +206,42 @@ export default function App() {
     })
   }, [useMarkdown])
 
-  const chatOpts = useCallback((): ChatOpts => ({ webSearch: useWebSearch, reasoning: useReasoning }), [useWebSearch, useReasoning])
+  const selectedModelMetadata = modelMetadata[selectedModel.replace(':online', '')] || null
+  const reasoningConfig = useMemo(() => getReasoningUiConfig(selectedModelMetadata), [selectedModelMetadata])
+
+  useEffect(() => {
+    const modelId = selectedModel.replace(':online', '')
+    if (!modelId) return
+
+    async function refreshMetadata() {
+      const fresh = await window.api.modelsMetadata(modelId)
+      if (fresh && Object.keys(fresh).length > 0) setModelMetadata(prev => ({ ...prev, [modelId]: fresh }))
+    }
+    refreshMetadata()
+  }, [selectedModel])
+
+  useEffect(() => {
+    if (reasoningConfig.mode === 'none') {
+      setReasoningEnabled(false)
+      setReasoningLevel(null)
+      return
+    }
+    if (reasoningConfig.mode === 'always_on') {
+      setReasoningEnabled(true)
+      setReasoningLevel(null)
+      return
+    }
+    if (reasoningConfig.mode === 'toggle' && reasoningEnabled) setReasoningLevel(null)
+    if (reasoningConfig.mode === 'levels' && !reasoningLevel) setReasoningLevel(reasoningConfig.defaultLevel || reasoningConfig.levels[0] || null)
+  }, [reasoningConfig.mode, reasoningConfig.defaultLevel, reasoningConfig.levels, reasoningEnabled, reasoningLevel])
+
+  const chatOpts = useCallback((): ChatOpts => ({
+    webSearch: useWebSearch,
+    reasoning: {
+      enabled: reasoningEnabled || reasoningConfig.mode === 'always_on',
+      level: reasoningConfig.mode === 'levels' ? reasoningLevel : null,
+    },
+  }), [useWebSearch, reasoningEnabled, reasoningLevel, reasoningConfig.mode])
 
   // ── Actions ──
   const loadConversation = useCallback(async (id: number) => {
@@ -297,10 +365,31 @@ export default function App() {
           <input type="checkbox" checked={useWebSearch} onChange={e => setUseWebSearch(e.target.checked)} className="accent-accent w-3.5 h-3.5" />
           Web Search
         </label>
-        <label className="flex items-center gap-1.5 text-text-muted hover:text-text cursor-pointer select-none">
-          <input type="checkbox" checked={useReasoning} onChange={e => setUseReasoning(e.target.checked)} className="accent-accent w-3.5 h-3.5" />
-          Reasoning
-        </label>
+        {reasoningConfig.mode === 'toggle' && (
+          <label className="flex items-center gap-1.5 text-text-muted hover:text-text cursor-pointer select-none">
+            <input type="checkbox" checked={reasoningEnabled} onChange={e => setReasoningEnabled(e.target.checked)} className="accent-accent w-3.5 h-3.5" />
+            Reasoning
+          </label>
+        )}
+        {reasoningConfig.mode === 'always_on' && (
+          <span className="text-text-muted select-none">Reasoning: On</span>
+        )}
+        {reasoningConfig.mode === 'levels' && (
+          <>
+            <label className="flex items-center gap-1.5 text-text-muted hover:text-text cursor-pointer select-none">
+              <input type="checkbox" checked={reasoningEnabled} onChange={e => setReasoningEnabled(e.target.checked)} className="accent-accent w-3.5 h-3.5" />
+              Reasoning
+            </label>
+            <select
+              value={reasoningLevel || ''}
+              disabled={!reasoningEnabled}
+              onChange={e => setReasoningLevel(e.target.value || null)}
+              className="bg-bg-elevated text-text-muted border border-border rounded px-2 py-0.5 fs-ui-xs max-w-[170px] disabled:opacity-60"
+            >
+              {reasoningConfig.levels.map(level => <option key={level} value={level}>{`Reasoning: ${level}`}</option>)}
+            </select>
+          </>
+        )}
         <div className="ml-auto flex items-center gap-3">
           <button onClick={() => { setSettingsTab('prompts'); setSettingsOpen(true) }} className="text-text-muted hover:text-accent transition-colors">Prompts</button>
           <select value={selectedPrompt || ''} onChange={e => setSelectedPrompt(e.target.value || null)}
