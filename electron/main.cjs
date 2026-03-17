@@ -289,16 +289,11 @@ function convMessagesForApi() { return messages.map(m => ({ role: m.role, conten
 // ════════════════════════════════════════════════════════════════
 
 let abortController = null;
-function buildWebSearchApiParams(opts) {
-  if (!opts?.webSearch) return {};
-  return { plugins: [{ id: 'web' }] };
-}
-
-async function streamResponse(win, modelId, temperature, extra, opts) {
+async function streamResponse(win, modelId, temperature, extra) {
   const key = getApiKey();
   if (!key) { win.webContents.send('stream:error', 'API key not configured'); return; }
   abortController = new AbortController();
-  const payload = { model: modelId, messages: convMessagesForApi(), temperature, stream: true, ...extra, ...buildWebSearchApiParams(opts) };
+  const payload = { model: modelId, messages: convMessagesForApi(), temperature, stream: true, ...extra };
   try {
     const res = await fetch('https://openrouter.ai/api/v1/chat/completions', { method: 'POST', headers: { 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json', 'X-Title': 'YaOG' }, body: JSON.stringify(payload), signal: abortController.signal });
     if (!res.ok) { const errText = await res.text().catch(() => ''); win.webContents.send('stream:error', res.status === 429 ? 'Rate limit (429). Try again shortly.' : `API error ${res.status}: ${errText.slice(0, 200)}`); return; }
@@ -705,10 +700,13 @@ function registerIPC(win) {
       }
     }
 
-    const metadata = modelMetadata[modelId] || null;
+    let effectiveModel = modelId;
+    if (opts?.webSearch && !effectiveModel.endsWith(':online')) effectiveModel += ':online';
+    if (!opts?.webSearch && effectiveModel.endsWith(':online')) effectiveModel = effectiveModel.replace(':online', '');
+    const metadata = modelMetadata[effectiveModel] || modelMetadata[modelId] || null;
     const extra = buildReasoningApiParams(metadata, opts?.reasoning);
 
-    await streamResponse(win, modelId, temp, extra, opts);
+    await streamResponse(win, effectiveModel, temp, extra);
     return { conversations: dbGetConversations(), tokenCount: estimateTokens() };
   });
 
@@ -716,17 +714,23 @@ function registerIPC(win) {
 
   ipcMain.handle('chat:edit', async (_, index, newContent, modelId, temp, opts) => {
     convUpdateMessage(index, newContent); convPruneAfter(index);
-    const metadata = modelMetadata[modelId] || null;
+    let effectiveModel = modelId;
+    if (opts?.webSearch && !effectiveModel.endsWith(':online')) effectiveModel += ':online';
+    if (!opts?.webSearch && effectiveModel.endsWith(':online')) effectiveModel = effectiveModel.replace(':online', '');
+    const metadata = modelMetadata[effectiveModel] || modelMetadata[modelId] || null;
     const extra = buildReasoningApiParams(metadata, opts?.reasoning);
-    await streamResponse(win, modelId, temp, extra, opts);
+    await streamResponse(win, effectiveModel, temp, extra);
     return { conversations: dbGetConversations(), tokenCount: estimateTokens() };
   });
 
   ipcMain.handle('chat:regenerate', async (_, index, modelId, temp, opts) => {
     if (messages[index]?.role === 'assistant') convPruneFrom(index); else convPruneAfter(index);
-    const metadata = modelMetadata[modelId] || null;
+    let effectiveModel = modelId;
+    if (opts?.webSearch && !effectiveModel.endsWith(':online')) effectiveModel += ':online';
+    if (!opts?.webSearch && effectiveModel.endsWith(':online')) effectiveModel = effectiveModel.replace(':online', '');
+    const metadata = modelMetadata[effectiveModel] || modelMetadata[modelId] || null;
     const extra = buildReasoningApiParams(metadata, opts?.reasoning);
-    await streamResponse(win, modelId, temp, extra, opts);
+    await streamResponse(win, effectiveModel, temp, extra);
     return { conversations: dbGetConversations(), tokenCount: estimateTokens() };
   });
 
@@ -751,7 +755,7 @@ function registerIPC(win) {
   ipcMain.handle('models:delete', (_, idx) => { if (idx >= 0 && idx < models.length) { models.splice(idx, 1); saveModels(models); } return models; });
   ipcMain.handle('models:move', (_, idx, dir) => { const t = dir === 'up' ? idx - 1 : idx + 1; if (t >= 0 && t < models.length) { [models[idx], models[t]] = [models[t], models[idx]]; saveModels(models); } return models; });
   ipcMain.handle('models:metadata', async (_, modelId = null) => {
-    const key = modelId ? String(modelId) : null;
+    const key = modelId ? String(modelId).replace(':online', '') : null;
     const target = key ? modelMetadata[key] : null;
     if (!target) await fetchModelMetadata(true);
     if (key) return modelMetadata[key] || {};

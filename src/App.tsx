@@ -86,7 +86,25 @@ function getReasoningUiConfig(metadata: Record<string, any> | null): ReasoningUi
 
   const caps = (metadata.capabilities ?? {}) as Record<string, any>
   const reasoning = (metadata.reasoning ?? caps.reasoning ?? caps.reasoning_config ?? {}) as Record<string, any>
-  const supported = Boolean(reasoning.supported ?? reasoning.enabled ?? caps.reasoning ?? metadata.supports_reasoning ?? false)
+  const supportedParameters = Array.isArray(metadata.supported_parameters)
+    ? metadata.supported_parameters.map((p: unknown) => String(p).toLowerCase())
+    : []
+
+  const inferredByParams = supportedParameters.some(p => p.includes('reason'))
+  const inferredByStructure =
+    Object.keys(reasoning).length > 0 ||
+    Array.isArray(reasoning.levels) ||
+    Array.isArray(reasoning.options) ||
+    'reasoning' in caps
+
+  const supported = Boolean(
+    reasoning.supported ??
+    reasoning.enabled ??
+    caps.reasoning ??
+    metadata.supports_reasoning ??
+    inferredByParams ??
+    inferredByStructure
+  )
   if (!supported) return unsupported
 
   const levels = Array.isArray(reasoning.levels)
@@ -101,6 +119,32 @@ function getReasoningUiConfig(metadata: Record<string, any> | null): ReasoningUi
   const alwaysOn = Boolean(reasoning.always_on || reasoning.required || reasoning.locked === true)
   if (alwaysOn) return { mode: 'always_on', levels: [], defaultLevel: null }
   return { mode: 'toggle', levels: [], defaultLevel: null }
+}
+
+
+function reasoningStatusLabel(mode: ReasoningMode, hasMetadata: boolean): string {
+  if (!hasMetadata) return 'Metadata unavailable'
+  if (mode === 'none') return 'Not supported by this model'
+  if (mode === 'always_on') return 'Always on for this model'
+  if (mode === 'toggle') return 'Off ↔ On'
+  return 'Off + reasoning levels'
+}
+
+interface ReasoningSliderModel {
+  labels: string[]
+  value: number
+  disabled: boolean
+}
+
+function getReasoningSliderModel(config: ReasoningUiConfig, enabled: boolean, level: string | null): ReasoningSliderModel {
+  if (config.mode === 'none') return { labels: ['Unavailable'], value: 0, disabled: true }
+  if (config.mode === 'always_on') return { labels: ['Always On'], value: 0, disabled: true }
+  if (config.mode === 'toggle') return { labels: ['Off', 'On'], value: enabled ? 1 : 0, disabled: false }
+
+  const labels = ['Off', ...config.levels]
+  const currentLevel = level || config.defaultLevel || config.levels[0] || null
+  const levelIndex = currentLevel ? Math.max(config.levels.indexOf(currentLevel), 0) : 0
+  return { labels, value: enabled ? levelIndex + 1 : 0, disabled: false }
 }
 
 export default function App() {
@@ -206,11 +250,11 @@ export default function App() {
     })
   }, [useMarkdown])
 
-  const selectedModelMetadata = modelMetadata[selectedModel] || null
+  const selectedModelMetadata = modelMetadata[selectedModel.replace(':online', '')] || null
   const reasoningConfig = useMemo(() => getReasoningUiConfig(selectedModelMetadata), [selectedModelMetadata])
 
   useEffect(() => {
-    const modelId = selectedModel
+    const modelId = selectedModel.replace(':online', '')
     if (!modelId) return
 
     async function refreshMetadata() {
@@ -242,6 +286,30 @@ export default function App() {
       level: reasoningConfig.mode === 'levels' ? reasoningLevel : null,
     },
   }), [useWebSearch, reasoningEnabled, reasoningLevel, reasoningConfig.mode])
+
+  const reasoningSlider = useMemo(
+    () => getReasoningSliderModel(reasoningConfig, reasoningEnabled, reasoningLevel),
+    [reasoningConfig, reasoningEnabled, reasoningLevel],
+  )
+
+  const onReasoningSliderChange = useCallback((rawValue: number) => {
+    if (reasoningConfig.mode === 'none' || reasoningConfig.mode === 'always_on') return
+
+    if (reasoningConfig.mode === 'toggle') {
+      setReasoningEnabled(rawValue >= 1)
+      setReasoningLevel(null)
+      return
+    }
+
+    if (rawValue <= 0) {
+      setReasoningEnabled(false)
+      return
+    }
+
+    const level = reasoningConfig.levels[rawValue - 1] || reasoningConfig.defaultLevel || reasoningConfig.levels[0] || null
+    setReasoningEnabled(true)
+    setReasoningLevel(level)
+  }, [reasoningConfig])
 
   // ── Actions ──
   const loadConversation = useCallback(async (id: number) => {
@@ -361,46 +429,28 @@ export default function App() {
           <input type="checkbox" checked={useMarkdown} onChange={e => setUseMarkdown(e.target.checked)} className="accent-accent w-3.5 h-3.5" />
           Markdown
         </label>
-        <label className="flex items-center gap-2 text-text-muted hover:text-text cursor-pointer select-none">
-          <span>Web Search</span>
-          <button
-            type="button"
-            role="switch"
-            aria-checked={useWebSearch}
-            aria-label="Toggle web search"
-            onClick={() => setUseWebSearch(v => !v)}
-            className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${useWebSearch ? 'bg-accent' : 'bg-bg-elevated border border-border'}`}
-          >
-            <span
-              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${useWebSearch ? 'translate-x-4' : 'translate-x-0.5'}`}
-            />
-          </button>
+        <label className="flex items-center gap-1.5 text-text-muted hover:text-text cursor-pointer select-none">
+          <input type="checkbox" checked={useWebSearch} onChange={e => setUseWebSearch(e.target.checked)} className="accent-accent w-3.5 h-3.5" />
+          Web Search
         </label>
-        {reasoningConfig.mode === 'toggle' && (
-          <label className="flex items-center gap-1.5 text-text-muted hover:text-text cursor-pointer select-none">
-            <input type="checkbox" checked={reasoningEnabled} onChange={e => setReasoningEnabled(e.target.checked)} className="accent-accent w-3.5 h-3.5" />
-            Reasoning
-          </label>
-        )}
-        {reasoningConfig.mode === 'always_on' && (
-          <span className="text-text-muted select-none">Reasoning: On</span>
-        )}
-        {reasoningConfig.mode === 'levels' && (
-          <>
-            <label className="flex items-center gap-1.5 text-text-muted hover:text-text cursor-pointer select-none">
-              <input type="checkbox" checked={reasoningEnabled} onChange={e => setReasoningEnabled(e.target.checked)} className="accent-accent w-3.5 h-3.5" />
-              Reasoning
-            </label>
-            <select
-              value={reasoningLevel || ''}
-              disabled={!reasoningEnabled}
-              onChange={e => setReasoningLevel(e.target.value || null)}
-              className="bg-bg-elevated text-text-muted border border-border rounded px-2 py-0.5 fs-ui-xs max-w-[170px] disabled:opacity-60"
-            >
-              {reasoningConfig.levels.map(level => <option key={level} value={level}>{`Reasoning: ${level}`}</option>)}
-            </select>
-          </>
-        )}
+        <div className="flex items-center gap-2 text-text-muted min-w-[330px]">
+          <span className="select-none">Reasoning</span>
+          <input
+            type="range"
+            min={0}
+            max={Math.max(reasoningSlider.labels.length - 1, 0)}
+            step={1}
+            value={reasoningSlider.value}
+            disabled={reasoningSlider.disabled}
+            onChange={e => onReasoningSliderChange(Number(e.target.value))}
+            className="w-40 accent-accent disabled:opacity-50"
+            title="Model-aware reasoning control"
+          />
+          <span className="min-w-[92px] text-right opacity-80 select-none">
+            {reasoningSlider.labels[reasoningSlider.value] || reasoningSlider.labels[0]}
+          </span>
+          <span className="opacity-70 select-none">{reasoningStatusLabel(reasoningConfig.mode, !!selectedModelMetadata)}</span>
+        </div>
         <div className="ml-auto flex items-center gap-3">
           <button onClick={() => { setSettingsTab('prompts'); setSettingsOpen(true) }} className="text-text-muted hover:text-accent transition-colors">Prompts</button>
           <select value={selectedPrompt || ''} onChange={e => setSelectedPrompt(e.target.value || null)}
