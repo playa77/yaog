@@ -86,7 +86,39 @@ Your old database at `~/.or-client/or-client.db` is auto-detected and copied to 
 npm run build
 ```
 
-Produces AppImage and .deb in `release/`. The AppImage includes a `--no-sandbox` wrapper for Linux compatibility.
+Produces AppImage and .deb in `dist/`. The AppImage includes a `--no-sandbox` wrapper for Linux compatibility.
+
+## Recovering from an interrupted merge
+
+If you see:
+
+- `CONFLICT (content)` in `electron/main.cjs` / `src/App.tsx`
+- followed by `fatal: Exiting because of an unresolved conflict.` on the next `git merge`
+
+your repository is mid-merge and needs to be finished (or aborted) before trying again.
+
+### Option A: Abort and return to a clean branch
+
+```bash
+git merge --abort
+git status
+```
+
+### Option B: Resolve and complete the merge
+
+```bash
+# open files and remove conflict markers
+$EDITOR electron/main.cjs src/App.tsx
+
+# confirm there are no markers left
+rg -n "<<<<<<<|=======|>>>>>>>" electron/main.cjs src/App.tsx
+
+# mark resolved, then commit the merge
+git add electron/main.cjs src/App.tsx
+git commit
+```
+
+After either option, you can run `git merge <branch>` again.
 
 ### Optional system dependencies
 
