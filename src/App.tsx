@@ -1,12 +1,13 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { Marked } from 'marked'
 import hljs from 'highlight.js'
-import type { Conversation, Message, Model, SystemPrompt, FileAttachment, ChatOpts } from './types'
+import type { Conversation, Message, Model, SystemPrompt, FileAttachment, ChatOpts, LoadedConversation } from './types'
 import Sidebar from './components/Sidebar'
 import Toolbar from './components/Toolbar'
 import ChatView from './components/ChatView'
 import InputBar from './components/InputBar'
 import SettingsSheet from './components/SettingsSheet'
+import Tooltip from './components/Tooltip'
 
 // ── Regex to match file-content blocks injected by attachment system ──
 const FILE_BLOCK_RE = /<div class="yaog-file-content"[^>]*>[\s\S]*?<\/div>/g
@@ -85,7 +86,7 @@ function getReasoningUiConfig(metadata: Record<string, any> | null): ReasoningUi
   if (!metadata || typeof metadata !== 'object') return unsupported
 
   const caps = (metadata.capabilities ?? {}) as Record<string, any>
-  const reasoning = (metadata.reasoning ?? caps.reasoning ?? caps.reasoning_config ?? {}) as Record<string, any>
+  const reasoning = (metadata.reasoning ?? metadata.thinking ?? caps.reasoning ?? caps.thinking ?? caps.reasoning_config ?? {}) as Record<string, any>
   const supportedParameters = Array.isArray(metadata.supported_parameters)
     ? metadata.supported_parameters.map((p: unknown) => String(p).toLowerCase())
     : []
@@ -95,6 +96,7 @@ function getReasoningUiConfig(metadata: Record<string, any> | null): ReasoningUi
     Object.keys(reasoning).length > 0 ||
     Array.isArray(reasoning.levels) ||
     Array.isArray(reasoning.options) ||
+    Array.isArray(reasoning.enum) ||
     'reasoning' in caps
 
   const supported = Boolean(
@@ -107,13 +109,25 @@ function getReasoningUiConfig(metadata: Record<string, any> | null): ReasoningUi
   )
   if (!supported) return unsupported
 
-  const levels = Array.isArray(reasoning.levels)
-    ? reasoning.levels.map((l: unknown) => String(l))
-    : Array.isArray(reasoning.options)
-      ? reasoning.options.map((l: unknown) => String(l))
-      : []
+  const levelsRaw =
+    reasoning.levels ??
+    reasoning.options ??
+    reasoning.values ??
+    reasoning.enum ??
+    reasoning.effort_levels ??
+    reasoning.thinking_levels ??
+    reasoning?.effort?.levels ??
+    reasoning?.effort?.enum ??
+    []
+
+  const levels = (Array.isArray(levelsRaw) ? levelsRaw : [])
+    .map((l: unknown) => typeof l === 'string' ? l : (l && typeof l === 'object' ? String((l as Record<string, unknown>).id ?? (l as Record<string, unknown>).name ?? '') : String(l)))
+    .map(l => l.trim())
+    .filter(Boolean)
   if (levels.length > 0) {
-    return { mode: 'levels', levels, defaultLevel: String(reasoning.default_level ?? reasoning.default ?? levels[0]) }
+    const rawDefault = String(reasoning.default_level ?? reasoning.default ?? reasoning.default_value ?? reasoning?.effort?.default ?? levels[0])
+    const defaultLevel = levels.includes(rawDefault) ? rawDefault : levels[0]
+    return { mode: 'levels', levels, defaultLevel }
   }
 
   const alwaysOn = Boolean(reasoning.always_on || reasoning.required || reasoning.locked === true)
@@ -134,6 +148,12 @@ interface ReasoningSliderModel {
   labels: string[]
   value: number
   disabled: boolean
+}
+
+function formatReasoningLevelLabel(level: string): string {
+  return level
+    .replace(/[_-]+/g, ' ')
+    .replace(/\b\w/g, c => c.toUpperCase())
 }
 
 function getReasoningSliderModel(config: ReasoningUiConfig, enabled: boolean, level: string | null): ReasoningSliderModel {
@@ -276,7 +296,11 @@ export default function App() {
       return
     }
     if (reasoningConfig.mode === 'toggle' && reasoningEnabled) setReasoningLevel(null)
-    if (reasoningConfig.mode === 'levels' && !reasoningLevel) setReasoningLevel(reasoningConfig.defaultLevel || reasoningConfig.levels[0] || null)
+    if (reasoningConfig.mode === 'levels') {
+      if (!reasoningLevel || !reasoningConfig.levels.includes(reasoningLevel)) {
+        setReasoningLevel(reasoningConfig.defaultLevel || reasoningConfig.levels[0] || null)
+      }
+    }
   }, [reasoningConfig.mode, reasoningConfig.defaultLevel, reasoningConfig.levels, reasoningEnabled, reasoningLevel])
 
   const chatOpts = useCallback((): ChatOpts => ({
@@ -291,6 +315,11 @@ export default function App() {
     () => getReasoningSliderModel(reasoningConfig, reasoningEnabled, reasoningLevel),
     [reasoningConfig, reasoningEnabled, reasoningLevel],
   )
+  const reasoningTooltip = useMemo(() => {
+    const current = reasoningSlider.labels[reasoningSlider.value] || reasoningSlider.labels[0] || 'Off'
+    return `Reasoning: ${formatReasoningLevelLabel(current)}`
+  }, [reasoningSlider])
+  const webSearchTooltip = useMemo(() => `Web Search: ${useWebSearch ? 'On' : 'Off'}`, [useWebSearch])
 
   const onReasoningSliderChange = useCallback((rawValue: number) => {
     if (reasoningConfig.mode === 'none' || reasoningConfig.mode === 'always_on') return
@@ -313,7 +342,14 @@ export default function App() {
 
   // ── Actions ──
   const loadConversation = useCallback(async (id: number) => {
-    const msgs = await window.api.convLoad(id); setCurrentConvId(id); setMessages(renderMessages(msgs))
+    const loaded: LoadedConversation = await window.api.convLoad(id)
+    const msgs = loaded.messages
+    setCurrentConvId(id)
+    setMessages(renderMessages(msgs))
+    if (loaded.state.modelId) setSelectedModel(loaded.state.modelId)
+    if (typeof loaded.state.temperature === 'number') setTemperature(loaded.state.temperature)
+    setSelectedPrompt(loaded.state.systemPrompt)
+    setUseWebSearch(loaded.state.webSearch)
     setTokenCount(await window.api.chatTokenCount()); setSidebarOpen(false)
   }, [renderMessages])
 
@@ -411,6 +447,8 @@ export default function App() {
   }, [useMarkdown, renderMessages])
 
   // ── Layout ──
+  const selectedPromptMissing = Boolean(selectedPrompt) && !prompts.some(p => p.prompt_text === selectedPrompt)
+
   return (
     <div className="h-full flex flex-col bg-bg overflow-hidden">
       <Toolbar
@@ -429,26 +467,38 @@ export default function App() {
           <input type="checkbox" checked={useMarkdown} onChange={e => setUseMarkdown(e.target.checked)} className="accent-accent w-3.5 h-3.5" />
           Markdown
         </label>
-        <label className="flex items-center gap-1.5 text-text-muted hover:text-text cursor-pointer select-none">
-          <input type="checkbox" checked={useWebSearch} onChange={e => setUseWebSearch(e.target.checked)} className="accent-accent w-3.5 h-3.5" />
-          Web Search
-        </label>
+        <div className="flex items-center gap-2 text-text-muted">
+          <span className="select-none">Web Search</span>
+          <Tooltip text={webSearchTooltip}>
+            <input
+              type="range"
+              min={0}
+              max={1}
+              step={1}
+              value={useWebSearch ? 1 : 0}
+              onChange={e => setUseWebSearch(Number(e.target.value) >= 1)}
+              className="w-14 h-1 accent-accent cursor-pointer"
+              aria-label="Web Search"
+              title={webSearchTooltip}
+            />
+          </Tooltip>
+        </div>
         <div className="flex items-center gap-2 text-text-muted min-w-[330px]">
           <span className="select-none">Reasoning</span>
-          <input
-            type="range"
-            min={0}
-            max={Math.max(reasoningSlider.labels.length - 1, 0)}
-            step={1}
-            value={reasoningSlider.value}
-            disabled={reasoningSlider.disabled}
-            onChange={e => onReasoningSliderChange(Number(e.target.value))}
-            className="w-40 accent-accent disabled:opacity-50"
-            title="Model-aware reasoning control"
-          />
-          <span className="min-w-[92px] text-right opacity-80 select-none">
-            {reasoningSlider.labels[reasoningSlider.value] || reasoningSlider.labels[0]}
-          </span>
+          <Tooltip text={reasoningTooltip}>
+            <input
+              type="range"
+              min={0}
+              max={Math.max(reasoningSlider.labels.length - 1, 0)}
+              step={1}
+              value={reasoningSlider.value}
+              disabled={reasoningSlider.disabled}
+              onChange={e => onReasoningSliderChange(Number(e.target.value))}
+              className="w-40 h-1 accent-accent cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              aria-label="Reasoning"
+              title={reasoningTooltip}
+            />
+          </Tooltip>
           <span className="opacity-70 select-none">{reasoningStatusLabel(reasoningConfig.mode, !!selectedModelMetadata)}</span>
         </div>
         <div className="ml-auto flex items-center gap-3">
@@ -456,6 +506,7 @@ export default function App() {
           <select value={selectedPrompt || ''} onChange={e => setSelectedPrompt(e.target.value || null)}
                   className="bg-bg-elevated text-text-muted border border-border rounded px-2 py-0.5 fs-ui-xs max-w-[200px]">
             <option value="">No system prompt</option>
+            {selectedPromptMissing && <option value={selectedPrompt || ''}>Loaded prompt (custom)</option>}
             {prompts.map(p => <option key={p.id} value={p.prompt_text}>{p.name}</option>)}
           </select>
         </div>

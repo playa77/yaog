@@ -33,6 +33,18 @@ export interface ChatOpts {
   };
 }
 
+export interface LoadedConversationState {
+  modelId: string | null;
+  systemPrompt: string | null;
+  temperature: number | null;
+  webSearch: boolean;
+}
+
+export interface LoadedConversation {
+  messages: Message[];
+  state: LoadedConversationState;
+}
+
 export interface FileAttachment {
   path: string;
   name: string;
@@ -57,7 +69,7 @@ declare global {
     api: {
       convList: () => Promise<Conversation[]>;
       convNew: () => Promise<boolean>;
-      convLoad: (id: number) => Promise<Message[]>;
+      convLoad: (id: number) => Promise<LoadedConversation>;
       convDelete: (id: number) => Promise<boolean>;
       convRename: (id: number, title: string) => Promise<boolean>;
       convExport: (id: number) => Promise<string>;
