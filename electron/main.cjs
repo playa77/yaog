@@ -982,6 +982,90 @@ function registerIPC(win) {
 
 let mainWindow;
 
+
+function createAppMenu() {
+  const template = [
+    ...(process.platform === 'darwin' ? [{
+      label: app.name,
+      submenu: [
+        { role: 'about' },
+        { type: 'separator' },
+        { role: 'services' },
+        { type: 'separator' },
+        { role: 'hide' },
+        { role: 'hideOthers' },
+        { role: 'unhide' },
+        { type: 'separator' },
+        { role: 'quit' },
+      ],
+    }] : []),
+    {
+      label: 'File',
+      submenu: [
+        process.platform === 'darwin' ? { role: 'close' } : { role: 'quit' },
+      ],
+    },
+    {
+      label: 'Edit',
+      submenu: [
+        { role: 'undo' },
+        { role: 'redo' },
+        { type: 'separator' },
+        { role: 'cut' },
+        { role: 'copy' },
+        { role: 'paste' },
+        { role: 'selectAll' },
+      ],
+    },
+    {
+      label: 'View',
+      submenu: [
+        { role: 'reload' },
+        { role: 'forceReload' },
+        { role: 'toggleDevTools' },
+        { type: 'separator' },
+        { role: 'resetZoom' },
+        { role: 'zoomIn' },
+        { role: 'zoomOut' },
+        { type: 'separator' },
+        { role: 'togglefullscreen' },
+      ],
+    },
+    {
+      label: 'Window',
+      submenu: [
+        { role: 'minimize' },
+        { role: 'close' },
+      ],
+    },
+    {
+      role: 'help',
+      submenu: [
+        {
+          label: `About ${app.name}`,
+          click: () => {
+            const details = [
+              `Version: ${app.getVersion()}`,
+              `Electron: ${process.versions.electron}`,
+              `Chrome: ${process.versions.chrome}`,
+              `Node.js: ${process.versions.node}`,
+            ].join('\n');
+            dialog.showMessageBox({
+              type: 'info',
+              title: `About ${app.name}`,
+              message: app.name,
+              detail: details,
+              buttons: ['OK'],
+            });
+          },
+        },
+      ],
+    },
+  ];
+
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1100, height: 800, minWidth: 640, minHeight: 500,
@@ -1046,7 +1130,7 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
-  ensureDataDir(); initDatabase(); migrateNewChatTitles(); createWindow();
+  ensureDataDir(); initDatabase(); migrateNewChatTitles(); createAppMenu(); createWindow();
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 });
 
