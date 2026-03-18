@@ -477,7 +477,7 @@ export default function App() {
               step={1}
               value={useWebSearch ? 1 : 0}
               onChange={e => setUseWebSearch(Number(e.target.value) >= 1)}
-              className="w-14 h-1 accent-accent cursor-pointer"
+              className="w-[2.8rem] h-1 accent-accent cursor-pointer"
               aria-label="Web Search"
               title={webSearchTooltip}
             />
@@ -494,12 +494,11 @@ export default function App() {
               value={reasoningSlider.value}
               disabled={reasoningSlider.disabled}
               onChange={e => onReasoningSliderChange(Number(e.target.value))}
-              className="w-40 h-1 accent-accent cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-[2.8rem] h-1 accent-accent cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
               aria-label="Reasoning"
               title={reasoningTooltip}
             />
           </Tooltip>
-          <span className="opacity-70 select-none">{reasoningStatusLabel(reasoningConfig.mode, !!selectedModelMetadata)}</span>
         </div>
         <div className="ml-auto flex items-center gap-3">
           <button onClick={() => { setSettingsTab('prompts'); setSettingsOpen(true) }} className="text-text-muted hover:text-accent transition-colors">Prompts</button>
