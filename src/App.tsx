@@ -463,10 +463,22 @@ export default function App() {
 
       {/* Options bar */}
       <div className="flex items-center gap-4 px-4 py-1.5 bg-bg-surface border-b border-border fs-ui-xs font-sans">
-        <label className="flex items-center gap-1.5 text-text-muted hover:text-text cursor-pointer select-none">
-          <input type="checkbox" checked={useMarkdown} onChange={e => setUseMarkdown(e.target.checked)} className="accent-accent w-3.5 h-3.5" />
-          Markdown
-        </label>
+        <div className="flex items-center gap-2 text-text-muted">
+          <span className="select-none">Markdown</span>
+          <Tooltip text={useMarkdown ? 'Markdown formatting enabled' : 'Plain text mode enabled'}>
+            <input
+              type="range"
+              min={0}
+              max={1}
+              step={1}
+              value={useMarkdown ? 1 : 0}
+              onChange={e => setUseMarkdown(Number(e.target.value) >= 1)}
+              className="w-[2.8rem] h-1 accent-accent cursor-pointer"
+              aria-label="Markdown"
+              title={useMarkdown ? 'Markdown formatting enabled' : 'Plain text mode enabled'}
+            />
+          </Tooltip>
+        </div>
         <div className="flex items-center gap-2 text-text-muted">
           <span className="select-none">Web Search</span>
           <Tooltip text={webSearchTooltip}>
