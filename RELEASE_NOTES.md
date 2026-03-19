@@ -1,3 +1,20 @@
+# YaOG v7.1.5 — Release Notes
+
+**Released:** 2026-03-19
+**Previous:** v7.1.4
+
+---
+
+## Changes
+
+### Removed reasoning controls and parameter plumbing
+
+Reasoning level management has been removed from the app. The Reasoning slider is gone from the toolbar, renderer-side reasoning state and metadata interpretation are removed, and chat requests no longer attempt to send `include_reasoning` / `reasoning_effort` style OpenRouter parameters.
+
+YaOG now fully delegates reasoning behavior to OpenRouter/model defaults while preserving all existing chat, web search, and model selection behavior.
+
+---
+
 # YaOG v7.1.1 — Release Notes
 
 **Released:** 2025-02-20
