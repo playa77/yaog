@@ -27,10 +27,6 @@ export interface SystemPrompt {
 
 export interface ChatOpts {
   webSearch?: boolean;
-  reasoning?: {
-    enabled: boolean;
-    level?: string | null;
-  };
 }
 
 export interface LoadedConversationState {

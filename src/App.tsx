@@ -73,99 +73,6 @@ export interface DisplayMessage {
   model: string
 }
 
-type ReasoningMode = 'none' | 'toggle' | 'always_on' | 'levels'
-
-interface ReasoningUiConfig {
-  mode: ReasoningMode
-  levels: string[]
-  defaultLevel: string | null
-}
-
-function getReasoningUiConfig(metadata: Record<string, any> | null): ReasoningUiConfig {
-  const unsupported: ReasoningUiConfig = { mode: 'none', levels: [], defaultLevel: null }
-  if (!metadata || typeof metadata !== 'object') return unsupported
-
-  const caps = (metadata.capabilities ?? {}) as Record<string, any>
-  const reasoning = (metadata.reasoning ?? metadata.thinking ?? caps.reasoning ?? caps.thinking ?? caps.reasoning_config ?? {}) as Record<string, any>
-  const supportedParameters = Array.isArray(metadata.supported_parameters)
-    ? metadata.supported_parameters.map((p: unknown) => String(p).toLowerCase())
-    : []
-
-  const inferredByParams = supportedParameters.some(p => p.includes('reason'))
-  const inferredByStructure =
-    Object.keys(reasoning).length > 0 ||
-    Array.isArray(reasoning.levels) ||
-    Array.isArray(reasoning.options) ||
-    Array.isArray(reasoning.enum) ||
-    'reasoning' in caps
-
-  const supported = Boolean(
-    reasoning.supported ??
-    reasoning.enabled ??
-    caps.reasoning ??
-    metadata.supports_reasoning ??
-    inferredByParams ??
-    inferredByStructure
-  )
-  if (!supported) return unsupported
-
-  const levelsRaw =
-    reasoning.levels ??
-    reasoning.options ??
-    reasoning.values ??
-    reasoning.enum ??
-    reasoning.effort_levels ??
-    reasoning.thinking_levels ??
-    reasoning?.effort?.levels ??
-    reasoning?.effort?.enum ??
-    []
-
-  const levels = (Array.isArray(levelsRaw) ? levelsRaw : [])
-    .map((l: unknown) => typeof l === 'string' ? l : (l && typeof l === 'object' ? String((l as Record<string, unknown>).id ?? (l as Record<string, unknown>).name ?? '') : String(l)))
-    .map(l => l.trim())
-    .filter(Boolean)
-  if (levels.length > 0) {
-    const rawDefault = String(reasoning.default_level ?? reasoning.default ?? reasoning.default_value ?? reasoning?.effort?.default ?? levels[0])
-    const defaultLevel = levels.includes(rawDefault) ? rawDefault : levels[0]
-    return { mode: 'levels', levels, defaultLevel }
-  }
-
-  const alwaysOn = Boolean(reasoning.always_on || reasoning.required || reasoning.locked === true)
-  if (alwaysOn) return { mode: 'always_on', levels: [], defaultLevel: null }
-  return { mode: 'toggle', levels: [], defaultLevel: null }
-}
-
-
-function reasoningStatusLabel(mode: ReasoningMode, hasMetadata: boolean): string {
-  if (!hasMetadata) return 'Metadata unavailable'
-  if (mode === 'none') return 'Not supported by this model'
-  if (mode === 'always_on') return 'Always on for this model'
-  if (mode === 'toggle') return 'Off ↔ On'
-  return 'Off + reasoning levels'
-}
-
-interface ReasoningSliderModel {
-  labels: string[]
-  value: number
-  disabled: boolean
-}
-
-function formatReasoningLevelLabel(level: string): string {
-  return level
-    .replace(/[_-]+/g, ' ')
-    .replace(/\b\w/g, c => c.toUpperCase())
-}
-
-function getReasoningSliderModel(config: ReasoningUiConfig, enabled: boolean, level: string | null): ReasoningSliderModel {
-  if (config.mode === 'none') return { labels: ['Unavailable'], value: 0, disabled: true }
-  if (config.mode === 'always_on') return { labels: ['Always On'], value: 0, disabled: true }
-  if (config.mode === 'toggle') return { labels: ['Off', 'On'], value: enabled ? 1 : 0, disabled: false }
-
-  const labels = ['Off', ...config.levels]
-  const currentLevel = level || config.defaultLevel || config.levels[0] || null
-  const levelIndex = currentLevel ? Math.max(config.levels.indexOf(currentLevel), 0) : 0
-  return { labels, value: enabled ? levelIndex + 1 : 0, disabled: false }
-}
 
 export default function App() {
   // ── State ──
@@ -179,9 +86,6 @@ export default function App() {
   const [selectedPrompt, setSelectedPrompt] = useState<string | null>(null)
   const [useMarkdown, setUseMarkdown] = useState(true)
   const [useWebSearch, setUseWebSearch] = useState(false)
-  const [reasoningEnabled, setReasoningEnabled] = useState(false)
-  const [reasoningLevel, setReasoningLevel] = useState<string | null>(null)
-  const [modelMetadata, setModelMetadata] = useState<Record<string, any>>({})
   const [isStreaming, setIsStreaming] = useState(false)
   const [streamContent, setStreamContent] = useState('')
   const [streamModel, setStreamModel] = useState('')
@@ -199,7 +103,6 @@ export default function App() {
   })
 
   const streamContentRef = useRef('')
-  const lastReasoningModelRef = useRef<string | null>(null)
 
   // ── Apply font settings as CSS custom properties ──
   const applyFontSettings = useCallback((s: typeof fontSettings) => {
@@ -223,10 +126,10 @@ export default function App() {
   // ── Init ──
   useEffect(() => {
     async function init() {
-      const [convs, mdls, prms, settings, metadata] = await Promise.all([
-        window.api.convList(), window.api.modelsList(), window.api.promptsList(), window.api.settingsGet(), window.api.modelsMetadata(),
+      const [convs, mdls, prms, settings] = await Promise.all([
+        window.api.convList(), window.api.modelsList(), window.api.promptsList(), window.api.settingsGet(),
       ])
-      setConversations(convs); setModels(mdls); setPrompts(prms); setApiKeySet(settings.apiKeySet); setModelMetadata(metadata || {})
+      setConversations(convs); setModels(mdls); setPrompts(prms); setApiKeySet(settings.apiKeySet)
       if (mdls.length > 0) setSelectedModel(mdls[0].id)
       const fs = {
         chat_font_size: settings.chat_font_size ?? 16.5, chat_font_family: settings.chat_font_family ?? 'Literata',
@@ -271,85 +174,12 @@ export default function App() {
     })
   }, [useMarkdown])
 
-  const selectedModelMetadata = modelMetadata[selectedModel.replace(':online', '')] || null
-  const reasoningConfig = useMemo(() => getReasoningUiConfig(selectedModelMetadata), [selectedModelMetadata])
-
-  useEffect(() => {
-    const modelId = selectedModel.replace(':online', '')
-    if (!modelId) return
-
-    async function refreshMetadata() {
-      const fresh = await window.api.modelsMetadata(modelId)
-      if (fresh && Object.keys(fresh).length > 0) setModelMetadata(prev => ({ ...prev, [modelId]: fresh }))
-    }
-    refreshMetadata()
-  }, [selectedModel])
-
-  useEffect(() => {
-    const reasoningModelKey = `${selectedModel.replace(':online', '')}:${reasoningConfig.mode}:${reasoningConfig.levels.join('|')}`
-    const modelChanged = lastReasoningModelRef.current !== reasoningModelKey
-    if (modelChanged) lastReasoningModelRef.current = reasoningModelKey
-
-    if (reasoningConfig.mode === 'none') {
-      setReasoningEnabled(false)
-      setReasoningLevel(null)
-      return
-    }
-    if (reasoningConfig.mode === 'always_on') {
-      setReasoningEnabled(true)
-      setReasoningLevel(null)
-      return
-    }
-    if (reasoningConfig.mode === 'toggle' && reasoningEnabled) setReasoningLevel(null)
-    if (reasoningConfig.mode === 'levels') {
-      const maxLevel = reasoningConfig.levels[reasoningConfig.levels.length - 1] || reasoningConfig.defaultLevel || null
-      if (modelChanged && maxLevel) {
-        setReasoningEnabled(true)
-        setReasoningLevel(maxLevel)
-        return
-      }
-      if (!reasoningLevel || !reasoningConfig.levels.includes(reasoningLevel)) {
-        setReasoningLevel(maxLevel)
-      }
-    }
-  }, [selectedModel, reasoningConfig.mode, reasoningConfig.defaultLevel, reasoningConfig.levels, reasoningEnabled, reasoningLevel])
 
   const chatOpts = useCallback((): ChatOpts => ({
     webSearch: useWebSearch,
-    reasoning: {
-      enabled: reasoningEnabled || reasoningConfig.mode === 'always_on',
-      level: reasoningConfig.mode === 'levels' ? reasoningLevel : null,
-    },
-  }), [useWebSearch, reasoningEnabled, reasoningLevel, reasoningConfig.mode])
+  }), [useWebSearch])
 
-  const reasoningSlider = useMemo(
-    () => getReasoningSliderModel(reasoningConfig, reasoningEnabled, reasoningLevel),
-    [reasoningConfig, reasoningEnabled, reasoningLevel],
-  )
-  const reasoningTooltip = useMemo(() => {
-    const current = reasoningSlider.labels[reasoningSlider.value] || reasoningSlider.labels[0] || 'Off'
-    return `Reasoning: ${formatReasoningLevelLabel(current)}`
-  }, [reasoningSlider])
   const webSearchTooltip = useMemo(() => `Web Search: ${useWebSearch ? 'On' : 'Off'}`, [useWebSearch])
-
-  const onReasoningSliderChange = useCallback((rawValue: number) => {
-    if (reasoningConfig.mode === 'none' || reasoningConfig.mode === 'always_on') return
-
-    if (reasoningConfig.mode === 'toggle') {
-      setReasoningEnabled(rawValue >= 1)
-      setReasoningLevel(null)
-      return
-    }
-
-    if (rawValue <= 0) {
-      setReasoningEnabled(false)
-      return
-    }
-
-    const level = reasoningConfig.levels[rawValue - 1] || reasoningConfig.defaultLevel || reasoningConfig.levels[0] || null
-    setReasoningEnabled(true)
-    setReasoningLevel(level)
-  }, [reasoningConfig])
 
   // ── Actions ──
   const loadConversation = useCallback(async (id: number) => {
@@ -503,23 +333,6 @@ export default function App() {
               className="w-[2.8rem] h-1 accent-accent cursor-pointer"
               aria-label="Web Search"
               title={webSearchTooltip}
-            />
-          </Tooltip>
-        </div>
-        <div className="flex items-center gap-2 text-text-muted min-w-[330px]">
-          <span className="select-none">Reasoning</span>
-          <Tooltip text={reasoningTooltip}>
-            <input
-              type="range"
-              min={0}
-              max={Math.max(reasoningSlider.labels.length - 1, 0)}
-              step={1}
-              value={reasoningSlider.value}
-              disabled={reasoningSlider.disabled}
-              onChange={e => onReasoningSliderChange(Number(e.target.value))}
-              className="w-[2.8rem] h-1 accent-accent cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-              aria-label="Reasoning"
-              title={reasoningTooltip}
             />
           </Tooltip>
         </div>

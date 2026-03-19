@@ -107,7 +107,6 @@ function saveModels(m) { try { fs.writeFileSync(MODELS_PATH, JSON.stringify({ mo
 let models = loadModels();
 let modelMetadata = loadModelMetadataCache();
 const MODEL_METADATA_TTL_MS = 1000 * 60 * 60 * 6; // 6 hours
-const MODEL_PARAMETER_TTL_MS = 1000 * 60 * 60 * 6; // 6 hours
 let modelMetadataFetchedAt = Number(modelMetadata.__fetchedAt || 0) || 0;
 
 function loadModelMetadataCache() {
@@ -146,7 +145,6 @@ async function fetchModelMetadata(force = false) {
     }
     modelMetadata = { ...incoming };
     modelMetadataFetchedAt = Date.now();
-    await enrichInstalledModelReasoningMetadata(force);
     saveModelMetadataCache();
   } catch (e) {
     console.error('[MODELS] Failed to fetch metadata:', e.message);
@@ -154,191 +152,6 @@ async function fetchModelMetadata(force = false) {
   return modelMetadata;
 }
 
-function normalizeReasoningLevels(rawLevels) {
-  if (!Array.isArray(rawLevels)) return [];
-  return rawLevels
-    .map(level => typeof level === 'string' ? level : String((level && typeof level === 'object') ? (level.id ?? level.name ?? level.value ?? '') : level))
-    .map(level => level.trim())
-    .filter(Boolean);
-}
-
-function findReasoningConfigCandidate(payload) {
-  if (!payload || typeof payload !== 'object') return null;
-  if (payload.reasoning && typeof payload.reasoning === 'object') return payload.reasoning;
-  if (payload.thinking && typeof payload.thinking === 'object') return payload.thinking;
-
-  for (const key of ['parameters', 'parameter_definitions', 'defaults', 'data']) {
-    if (payload[key] && typeof payload[key] === 'object') {
-      const nested = findReasoningConfigCandidate(payload[key]);
-      if (nested) return nested;
-    }
-  }
-  return null;
-}
-
-function extractReasoningLevelsFromApiPayload(payload) {
-  const candidate = findReasoningConfigCandidate(payload);
-  if (!candidate) return { levels: [], defaultLevel: null };
-
-  const levels = normalizeReasoningLevels(
-    candidate.levels ??
-    candidate.options ??
-    candidate.values ??
-    candidate.enum ??
-    candidate.effort_levels ??
-    candidate.thinking_levels ??
-    candidate?.effort?.enum ??
-    candidate?.effort?.levels ??
-    []
-  );
-
-  const rawDefault = String(
-    candidate.default_level ??
-    candidate.default ??
-    candidate.default_value ??
-    candidate?.effort?.default ??
-    candidate?.effort?.default_level ??
-    levels[0] ??
-    ''
-  );
-  const defaultLevel = levels.includes(rawDefault) ? rawDefault : (levels[0] || null);
-  return { levels, defaultLevel };
-}
-
-async function fetchModelParameterMetadata(modelId, force = false) {
-  const normalizedModelId = String(modelId || '').replace(':online', '').trim();
-  if (!normalizedModelId.includes('/')) return null;
-
-  const existing = modelMetadata[normalizedModelId] || {};
-  const fetchedAt = Number(existing.__reasoningFetchedAt || 0) || 0;
-  if (!force && fetchedAt > 0 && (Date.now() - fetchedAt) < MODEL_PARAMETER_TTL_MS) return existing;
-
-  const key = getApiKey();
-  if (!key) return existing;
-
-  const [author, ...slugParts] = normalizedModelId.split('/');
-  const slug = slugParts.join('/');
-  if (!author || !slug) return existing;
-
-  try {
-    const res = await fetch(`https://openrouter.ai/api/v1/parameters/${encodeURIComponent(author)}/${encodeURIComponent(slug)}`, {
-      headers: { 'Authorization': `Bearer ${key}` },
-    });
-    if (!res.ok) return existing;
-
-    const payload = await res.json();
-    const { levels, defaultLevel } = extractReasoningLevelsFromApiPayload(payload);
-    if (levels.length === 0) return existing;
-
-    const merged = {
-      ...existing,
-      reasoning: {
-        ...(existing.reasoning && typeof existing.reasoning === 'object' ? existing.reasoning : {}),
-        supported: true,
-        levels,
-        default_level: defaultLevel,
-        source: 'openrouter-parameters',
-      },
-      __reasoningFetchedAt: Date.now(),
-    };
-    modelMetadata[normalizedModelId] = merged;
-    saveModelMetadataCache();
-    return merged;
-  } catch (e) {
-    console.error('[MODELS] Failed to fetch parameter metadata for', normalizedModelId, e.message);
-    return existing;
-  }
-}
-
-async function enrichInstalledModelReasoningMetadata(force = false) {
-  const installedIds = models.map(m => String(m.id || '').replace(':online', '')).filter(Boolean);
-  for (const modelId of installedIds) await fetchModelParameterMetadata(modelId, force);
-}
-
-function extractReasoningCapabilities(metadata) {
-  const unsupported = { mode: 'none', levels: [], defaultLevel: null, paramMap: {} };
-  if (!metadata || typeof metadata !== 'object') return unsupported;
-
-  const caps = metadata.capabilities || {};
-  const reasoning = metadata.reasoning || metadata.thinking || caps.reasoning || caps.thinking || caps.reasoning_config || {};
-  const supportedParameters = Array.isArray(metadata.supported_parameters)
-    ? metadata.supported_parameters.map(p => String(p).toLowerCase())
-    : [];
-  const inferredByParams = supportedParameters.some(p => p.includes('reason'));
-  const inferredByStructure =
-    Object.keys(reasoning).length > 0 ||
-    Array.isArray(reasoning.levels) ||
-    Array.isArray(reasoning.options) ||
-    Array.isArray(reasoning.values) ||
-    Array.isArray(reasoning.enum) ||
-    ('reasoning' in caps);
-  const supported = Boolean(
-    reasoning.supported ??
-    reasoning.enabled ??
-    caps.reasoning ??
-    metadata.supports_reasoning ??
-    inferredByParams ??
-    inferredByStructure
-  );
-  if (!supported) return unsupported;
-
-  const alwaysOn = Boolean(reasoning.always_on || reasoning.required || reasoning.locked === true);
-  const levelsRaw =
-    reasoning.levels ??
-    reasoning.options ??
-    reasoning.values ??
-    reasoning.enum ??
-    reasoning.effort_levels ??
-    reasoning.thinking_levels ??
-    reasoning?.effort?.levels ??
-    reasoning?.effort?.enum ??
-    [];
-  const levels = (Array.isArray(levelsRaw) ? levelsRaw : [])
-    .map(l => typeof l === 'string' ? l : String((l && typeof l === 'object') ? (l.id ?? l.name ?? '') : l))
-    .map(l => l.trim())
-    .filter(Boolean);
-  const rawDefault = String(reasoning.default_level ?? reasoning.default ?? reasoning.default_value ?? reasoning?.effort?.default ?? reasoning?.effort?.default_level ?? (levels[0] || ''));
-  const defaultLevel = levels.includes(rawDefault) ? rawDefault : (levels[0] || null);
-  const paramMap = reasoning.param_map && typeof reasoning.param_map === 'object' ? reasoning.param_map : {};
-
-  if (levels.length > 0) {
-    return { mode: 'levels', levels, defaultLevel, paramMap };
-  }
-  if (alwaysOn) {
-    return { mode: 'always_on', levels: [], defaultLevel: null, paramMap };
-  }
-  return { mode: 'toggle', levels: [], defaultLevel: null, paramMap };
-}
-
-function buildReasoningApiParams(metadata, reasoningState) {
-  const caps = extractReasoningCapabilities(metadata);
-  const mapped = {};
-  const map = caps.paramMap || {};
-  const state = reasoningState || { enabled: false, level: null };
-
-  if (caps.mode === 'none') return mapped;
-
-  if (caps.mode === 'always_on') {
-    mapped[map.toggle || 'include_reasoning'] = true;
-    return mapped;
-  }
-
-  if (caps.mode === 'toggle') {
-    mapped[map.toggle || 'include_reasoning'] = !!state.enabled;
-    return mapped;
-  }
-
-  if (caps.mode === 'levels') {
-    mapped[map.toggle || 'include_reasoning'] = !!state.enabled;
-    if (state.enabled) {
-      const key = map.level || 'reasoning_effort';
-      const level = state.level || caps.defaultLevel || caps.levels[0] || 'medium';
-      mapped[key] = level;
-    }
-  }
-
-  return mapped;
-}
 
 // ════════════════════════════════════════════════════════════════
 // Database
@@ -854,10 +667,7 @@ function registerIPC(win) {
     let effectiveModel = modelId;
     if (opts?.webSearch && !effectiveModel.endsWith(':online')) effectiveModel += ':online';
     if (!opts?.webSearch && effectiveModel.endsWith(':online')) effectiveModel = effectiveModel.replace(':online', '');
-    const metadata = modelMetadata[effectiveModel] || modelMetadata[modelId] || null;
-    const extra = buildReasoningApiParams(metadata, opts?.reasoning);
-
-    await streamResponse(win, effectiveModel, temp, extra);
+    await streamResponse(win, effectiveModel, temp, {});
     return { conversations: dbGetConversations(), tokenCount: estimateTokens() };
   });
 
@@ -868,9 +678,7 @@ function registerIPC(win) {
     let effectiveModel = modelId;
     if (opts?.webSearch && !effectiveModel.endsWith(':online')) effectiveModel += ':online';
     if (!opts?.webSearch && effectiveModel.endsWith(':online')) effectiveModel = effectiveModel.replace(':online', '');
-    const metadata = modelMetadata[effectiveModel] || modelMetadata[modelId] || null;
-    const extra = buildReasoningApiParams(metadata, opts?.reasoning);
-    await streamResponse(win, effectiveModel, temp, extra);
+    await streamResponse(win, effectiveModel, temp, {});
     return { conversations: dbGetConversations(), tokenCount: estimateTokens() };
   });
 
@@ -879,9 +687,7 @@ function registerIPC(win) {
     let effectiveModel = modelId;
     if (opts?.webSearch && !effectiveModel.endsWith(':online')) effectiveModel += ':online';
     if (!opts?.webSearch && effectiveModel.endsWith(':online')) effectiveModel = effectiveModel.replace(':online', '');
-    const metadata = modelMetadata[effectiveModel] || modelMetadata[modelId] || null;
-    const extra = buildReasoningApiParams(metadata, opts?.reasoning);
-    await streamResponse(win, effectiveModel, temp, extra);
+    await streamResponse(win, effectiveModel, temp, {});
     return { conversations: dbGetConversations(), tokenCount: estimateTokens() };
   });
 
@@ -905,28 +711,21 @@ function registerIPC(win) {
     if (models.some(m => m.id === id)) return models;
     models.push({ name, id });
     saveModels(models);
-    await fetchModelParameterMetadata(id, true);
     return models;
   });
   ipcMain.handle('models:update', async (_, idx, name, id) => {
     if (idx >= 0 && idx < models.length) {
       models[idx] = { name, id };
       saveModels(models);
-      await fetchModelParameterMetadata(id, true);
-    }
+      }
     return models;
   });
   ipcMain.handle('models:delete', (_, idx) => { if (idx >= 0 && idx < models.length) { models.splice(idx, 1); saveModels(models); } return models; });
   ipcMain.handle('models:move', (_, idx, dir) => { const t = dir === 'up' ? idx - 1 : idx + 1; if (t >= 0 && t < models.length) { [models[idx], models[t]] = [models[t], models[idx]]; saveModels(models); } return models; });
   ipcMain.handle('models:metadata', async (_, modelId = null) => {
     const key = modelId ? String(modelId).replace(':online', '') : null;
-    const target = key ? modelMetadata[key] : null;
-    if (!target) await fetchModelMetadata(true);
-    if (key) {
-      const enriched = await fetchModelParameterMetadata(key, false);
-      return enriched || modelMetadata[key] || {};
-    }
-    await enrichInstalledModelReasoningMetadata(false);
+    if (!modelMetadata || Object.keys(modelMetadata).length === 0) await fetchModelMetadata(true);
+    if (key) return modelMetadata[key] || {};
     return modelMetadata;
   });
 
