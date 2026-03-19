@@ -1,3 +1,24 @@
+# YaOG v7.1.6 — Release Notes
+
+**Released:** 2026-03-19
+**Previous:** v7.1.5
+
+---
+
+## Changes
+
+### Versioning discipline pass
+
+This release is strictly a versioning consistency update:
+
+- aligned app/package version to **7.1.6**
+- aligned documentation header versioning to **v7.1.6**
+- normalized release-note ordering so the latest release is clearly first
+
+No functional or behavioral changes were made in this release.
+
+---
+
 # YaOG v7.1.5 — Release Notes
 
 **Released:** 2026-03-19
@@ -100,5 +121,7 @@ v7.0.0's font size sliders were decorative — every component used hardcoded Ta
 
 | Version | Date | Summary |
 |---------|------|---------|
+| 7.1.6 | 2026-03-19 | Versioning consistency pass only |
+| 7.1.5 | 2026-03-19 | Removed reasoning controls and related parameter plumbing |
 | 7.1.1 | 2025-02-20 | PDF support, archive pipeline, context menu, copy system, close confirm, font scaling fix, sandbox fix |
 | 7.0.0 | — | Initial Electron rewrite from Python/Qt (v5) |
