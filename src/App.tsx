@@ -199,6 +199,7 @@ export default function App() {
   })
 
   const streamContentRef = useRef('')
+  const lastReasoningModelRef = useRef<string | null>(null)
 
   // ── Apply font settings as CSS custom properties ──
   const applyFontSettings = useCallback((s: typeof fontSettings) => {
@@ -285,6 +286,10 @@ export default function App() {
   }, [selectedModel])
 
   useEffect(() => {
+    const reasoningModelKey = `${selectedModel.replace(':online', '')}:${reasoningConfig.mode}:${reasoningConfig.levels.join('|')}`
+    const modelChanged = lastReasoningModelRef.current !== reasoningModelKey
+    if (modelChanged) lastReasoningModelRef.current = reasoningModelKey
+
     if (reasoningConfig.mode === 'none') {
       setReasoningEnabled(false)
       setReasoningLevel(null)
@@ -297,11 +302,17 @@ export default function App() {
     }
     if (reasoningConfig.mode === 'toggle' && reasoningEnabled) setReasoningLevel(null)
     if (reasoningConfig.mode === 'levels') {
+      const maxLevel = reasoningConfig.levels[reasoningConfig.levels.length - 1] || reasoningConfig.defaultLevel || null
+      if (modelChanged && maxLevel) {
+        setReasoningEnabled(true)
+        setReasoningLevel(maxLevel)
+        return
+      }
       if (!reasoningLevel || !reasoningConfig.levels.includes(reasoningLevel)) {
-        setReasoningLevel(reasoningConfig.defaultLevel || reasoningConfig.levels[0] || null)
+        setReasoningLevel(maxLevel)
       }
     }
-  }, [reasoningConfig.mode, reasoningConfig.defaultLevel, reasoningConfig.levels, reasoningEnabled, reasoningLevel])
+  }, [selectedModel, reasoningConfig.mode, reasoningConfig.defaultLevel, reasoningConfig.levels, reasoningEnabled, reasoningLevel])
 
   const chatOpts = useCallback((): ChatOpts => ({
     webSearch: useWebSearch,
