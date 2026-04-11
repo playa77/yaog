@@ -1032,6 +1032,12 @@ function registerIPC(win) {
   // ── Token counting ──
   function estimateTokens() { let c = 0; for (const m of messages) { c += 4 + Math.ceil((m.content || '').length / 4) + Math.ceil((m.role || '').length / 4); } return c + 2; }
   ipcMain.handle('chat:tokenCount', () => estimateTokens());
+  // Comprehensive count: system prompt (in messages[]) + history + current input
+  ipcMain.handle('chat:tokenCountFull', (_, inputText) => {
+    let c = estimateTokens();
+    if (inputText) c += 4 + Math.ceil(inputText.length / 4);
+    return c;
+  });
 
   // ── Models ──
   ipcMain.handle('models:list', () => models);

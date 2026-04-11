@@ -93,6 +93,7 @@ export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [settingsTab, setSettingsTab] = useState<string>('general')
   const [tokenCount, setTokenCount] = useState(0)
+  const [pendingInput, setPendingInput] = useState('')
   const [stagedFiles, setStagedFiles] = useState<FileAttachment[]>([])
   const [error, setError] = useState<string | null>(null)
   const [apiKeySet, setApiKeySet] = useState(false)
@@ -155,6 +156,20 @@ export default function App() {
     window.api.onStreamError((msg: string) => { setIsStreaming(false); setStreamContent(''); streamContentRef.current = ''; setError(msg) })
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ── Live token count: immediate on system-prompt change ──
+  useEffect(() => {
+    setTokenCount(window.api.chatTokenCountFull(''))
+  }, [selectedPrompt])
+
+  // ── Live token count: debounced ~5s as user types ──
+  useEffect(() => {
+    const timer = setTimeout(async () => {
+      const count = await window.api.chatTokenCountFull(pendingInput)
+      setTokenCount(count)
+    }, 5000)
+    return () => clearTimeout(timer)
+  }, [pendingInput])
+
   // ── Helpers ──
   const renderMessages = useCallback((msgs: (Message & { idx?: number })[]): DisplayMessage[] => {
     return msgs.filter(m => m.role !== 'system').map(m => {
@@ -203,7 +218,7 @@ export default function App() {
     const badges = attachmentBadgesHtml(fileNames)
     let fullText = text
     for (const f of stagedFiles) fullText += `\n<div class="yaog-file-content" data-filename="${f.name}">\n--- START OF FILE: ${f.name} ---\n${f.content}\n--- END OF FILE: ${f.name} ---\n</div>`
-    setStagedFiles([]); setError(null)
+    setStagedFiles([]); setError(null); setPendingInput('')
     const userHtml = useMarkdown ? renderMarkdown(text) : text.replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>')
     setMessages(prev => [...prev, {
       idx: -1,  // placeholder — replaced on next renderMessages call
@@ -357,7 +372,8 @@ export default function App() {
 
       <InputBar onSend={sendMessage} onStop={stopGeneration} isStreaming={isStreaming} onAttach={attachFiles}
                 stagedFiles={stagedFiles} onRemoveFile={removeStagedFile} apiKeySet={apiKeySet}
-                onOpenSettings={() => { setSettingsTab('api'); setSettingsOpen(true) }} />
+                onOpenSettings={() => { setSettingsTab('api'); setSettingsOpen(true) }}
+                onInputChange={setPendingInput} />
 
       <SettingsSheet open={settingsOpen} onClose={() => setSettingsOpen(false)} tab={settingsTab} onTabChange={setSettingsTab}
                      models={models} onModelsChange={setModels} prompts={prompts} onPromptsChange={setPrompts}
