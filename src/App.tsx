@@ -65,7 +65,7 @@ function stripMarkdown(md: string): string {
 
 // ── Display message type ──
 export interface DisplayMessage {
-  index: number
+  idx: number       // actual backend array index (stable across edits)
   role: 'user' | 'assistant' | 'system'
   html: string
   raw: string       // user-typed text only (file content stripped)
@@ -156,16 +156,15 @@ export default function App() {
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Helpers ──
-  const renderMessages = useCallback((msgs: Message[]): DisplayMessage[] => {
+  const renderMessages = useCallback((msgs: (Message & { idx?: number })[]): DisplayMessage[] => {
     return msgs.filter(m => m.role !== 'system').map(m => {
-      const realIndex = msgs.indexOf(m)
       const { text, filenames } = stripFileContent(m.content)
       const badges = attachmentBadgesHtml(filenames)
       const bodyHtml = useMarkdown
         ? renderMarkdown(text)
         : text.replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>')
       return {
-        index: realIndex, role: m.role,
+        idx: m.idx ?? 0, role: m.role,
         html: badges + bodyHtml,
         raw: text,              // clean text only
         fullRaw: m.content,     // FULL content with file blocks
@@ -207,7 +206,7 @@ export default function App() {
     setStagedFiles([]); setError(null)
     const userHtml = useMarkdown ? renderMarkdown(text) : text.replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>')
     setMessages(prev => [...prev, {
-      index: prev.length > 0 ? prev[prev.length - 1].index + 1 : 0,
+      idx: -1,  // placeholder — replaced on next renderMessages call
       role: 'user' as const, html: badges + userHtml, raw: text, fullRaw: fullText, model: '',
     }])
     const result = await window.api.chatSend(fullText, selectedModel, temperature, selectedPrompt, chatOpts())

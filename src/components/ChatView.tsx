@@ -64,7 +64,7 @@ export default function ChatView({
 
         {messages.map(m => (
           <MessageBubble
-            key={`${m.index}-${m.role}`}
+            key={`${m.idx}-${m.role}`}
             message={m}
             onEdit={onEdit}
             onRegenerate={onRegenerate}

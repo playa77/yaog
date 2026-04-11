@@ -947,7 +947,7 @@ function registerIPC(win) {
   ipcMain.handle('conv:load', (_, id) => {
     convLoad(id);
     return {
-      messages: messages.filter(m => m.role !== 'system'),
+      messages: messages.filter(m => m.role !== 'system').map((m) => ({ ...m, idx: messages.indexOf(m) })),
       state: getConversationState(),
     };
   });
@@ -1003,7 +1003,10 @@ function registerIPC(win) {
   });
 
   ipcMain.handle('chat:regenerate', async (_, index, modelId, temp, opts) => {
-    if (messages[index]?.role === 'assistant') convPruneFrom(index); else convPruneAfter(index);
+    // index is in the filtered (no-system) coordinate system — translate to actual backend array index
+    const actualIdx = messages.filter(m => m.role !== 'system').findIndex((_, i) => i === index);
+    if (actualIdx === -1 || actualIdx >= messages.length) return { conversations: dbGetConversations(), tokenCount: estimateTokens() };
+    if (messages[actualIdx]?.role === 'assistant') convPruneFrom(actualIdx); else convPruneAfter(actualIdx);
     let effectiveModel = modelId;
     if (opts?.webSearch && !effectiveModel.endsWith(':online')) effectiveModel += ':online';
     if (!opts?.webSearch && effectiveModel.endsWith(':online')) effectiveModel = effectiveModel.replace(':online', '');
@@ -1012,14 +1015,19 @@ function registerIPC(win) {
   });
 
   ipcMain.handle('chat:deleteMsg', (_, index) => {
-    convPruneFrom(index);
-    return { messages: messages.filter(m => m.role !== 'system'), tokenCount: estimateTokens() };
+    // index is in the filtered (no-system) coordinate system — translate to actual backend array index
+    const actualIdx = messages.filter(m => m.role !== 'system').findIndex((_, i) => i === index);
+    if (actualIdx !== -1 && actualIdx < messages.length) convPruneFrom(actualIdx);
+    return { messages: messages.filter(m => m.role !== 'system').map((m) => ({ ...m, idx: messages.indexOf(m) })), tokenCount: estimateTokens() };
   });
 
-  ipcMain.handle('chat:getMessages', () => messages.filter(m => m.role !== 'system'));
+  ipcMain.handle('chat:getMessages', () => messages
+    .filter(m => m.role !== 'system')
+    .map((m, i) => ({ ...m, idx: messages.indexOf(m) }))
+  );
 
   // Return ALL messages including file-content blocks (for full context copy)
-  ipcMain.handle('chat:getFullMessages', () => [...messages]);
+  ipcMain.handle('chat:getFullMessages', () => messages.map((m) => ({ ...m, idx: messages.indexOf(m) })));
 
   // ── Token counting ──
   function estimateTokens() { let c = 0; for (const m of messages) { c += 4 + Math.ceil((m.content || '').length / 4) + Math.ceil((m.role || '').length / 4); } return c + 2; }
