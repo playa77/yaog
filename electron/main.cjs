@@ -17,6 +17,7 @@ if (process.platform === 'linux') {
 const DATA_DIR = path.join(app.getPath('home'), '.yaog');
 const DB_PATH = path.join(DATA_DIR, 'yaog.db');
 const SETTINGS_PATH = path.join(DATA_DIR, 'settings.json');
+const PROMPT_META_PATH = path.join(DATA_DIR, 'prompt-meta.json');
 const MODELS_PATH = path.join(DATA_DIR, 'models.json');
 const MODEL_METADATA_CACHE_PATH = path.join(DATA_DIR, 'model-metadata.json');
 const ENV_PATH = path.join(DATA_DIR, '.env');
@@ -167,7 +168,19 @@ const dbGetMessages = (convId) => db.prepare('SELECT id, role, content, model_us
 const dbAddMessage = (convId, role, content, model, temp) => db.prepare('INSERT INTO messages (conversation_id, role, content, model_used, temperature_used) VALUES (?, ?, ?, ?, ?)').run(convId, role, content, model, temp).lastInsertRowid;
 const dbUpdateMessage = (msgId, content) => db.prepare('UPDATE messages SET content = ? WHERE id = ?').run(content, msgId);
 const dbDeleteMessage = (msgId) => db.prepare('DELETE FROM messages WHERE id = ?').run(msgId);
-const dbGetPrompts = () => db.prepare('SELECT id, name, prompt_text FROM system_prompts ORDER BY name ASC').all();
+function loadPromptMeta() {
+  try { if (fs.existsSync(PROMPT_META_PATH)) return JSON.parse(fs.readFileSync(PROMPT_META_PATH, 'utf8')); } catch {}
+  return {};
+}
+function savePromptMeta(meta) {
+  try { fs.writeFileSync(PROMPT_META_PATH, JSON.stringify(meta, null, 2)); } catch {}
+}
+
+const dbGetPrompts = () => {
+  const rows = db.prepare('SELECT id, name, prompt_text FROM system_prompts ORDER BY name ASC').all();
+  const meta = loadPromptMeta();
+  return rows.map(r => ({ ...r, when_to_use: meta[String(r.id)] || '' }));
+};
 const dbAddPrompt = (name, text) => db.prepare('INSERT INTO system_prompts (name, prompt_text) VALUES (?, ?)').run(name, text);
 const dbUpdatePrompt = (id, name, text) => db.prepare('UPDATE system_prompts SET name = ?, prompt_text = ? WHERE id = ?').run(name, text, id);
 const dbDeletePrompt = (id) => db.prepare('DELETE FROM system_prompts WHERE id = ?').run(id);
@@ -1065,7 +1078,16 @@ function registerIPC(win) {
 
   // ── System Prompts ──
   ipcMain.handle('prompts:list', () => dbGetPrompts());
-  ipcMain.handle('prompts:save', (_, id, name, text) => { if (id) dbUpdatePrompt(id, name, text); else dbAddPrompt(name, text); return dbGetPrompts(); });
+  ipcMain.handle('prompts:save', (_, id, name, text, whenToUse) => {
+    const promptId = id ?? dbAddPrompt(name, text);
+    if (id) dbUpdatePrompt(id, name, text);
+    if (whenToUse !== undefined) {
+      const meta = loadPromptMeta();
+      meta[String(promptId)] = whenToUse;
+      savePromptMeta(meta);
+    }
+    return dbGetPrompts();
+  });
   ipcMain.handle('prompts:delete', (_, id) => { dbDeletePrompt(id); return dbGetPrompts(); });
 
   // ── Settings ──
