@@ -23,6 +23,7 @@ export interface SystemPrompt {
   id: number;
   name: string;
   prompt_text: string;
+  when_to_use: string;
 }
 
 export interface ChatOpts {
@@ -88,7 +89,7 @@ declare global {
       modelsMetadata: (modelId?: string | null) => Promise<Record<string, any>>;
 
       promptsList: () => Promise<SystemPrompt[]>;
-      promptsSave: (id: number | null, name: string, text: string) => Promise<SystemPrompt[]>;
+      promptsSave: (id: number | null, name: string, text: string, whenToUse?: string) => Promise<SystemPrompt[]>;
       promptsDelete: (id: number) => Promise<SystemPrompt[]>;
 
       settingsGet: () => Promise<AppSettings>;

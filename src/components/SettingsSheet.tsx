@@ -543,12 +543,14 @@ function PromptsTab({ prompts, onPromptsChange }: { prompts: SystemPrompt[]; onP
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [name, setName] = useState('')
   const [content, setContent] = useState('')
+  const [whenToUse, setWhenToUse] = useState('')
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null)
 
   const select = (p: SystemPrompt) => {
     setSelectedId(p.id)
     setName(p.name)
     setContent(p.prompt_text)
+    setWhenToUse(p.when_to_use ?? '')
     setConfirmDeleteId(null)
   }
 
@@ -556,11 +558,12 @@ function PromptsTab({ prompts, onPromptsChange }: { prompts: SystemPrompt[]; onP
     setSelectedId(null)
     setName('')
     setContent('')
+    setWhenToUse('')
   }
 
   const save = async () => {
     if (!name.trim() || !content.trim()) return
-    const result = await window.api.promptsSave(selectedId, name.trim(), content.trim())
+    const result = await window.api.promptsSave(selectedId, name.trim(), content.trim(), whenToUse.trim())
     onPromptsChange(result)
     reset()
   }
@@ -630,6 +633,18 @@ function PromptsTab({ prompts, onPromptsChange }: { prompts: SystemPrompt[]; onP
                   placeholder="You are a seasoned dungeon master who creates immersive, dark fantasy worlds…"
                   rows={6}
                   className="w-full bg-bg-elevated text-text-bright border border-border rounded-lg px-3 py-2.5 fs-ui-sm resize-y focus:outline-none focus:border-accent" />
+
+        {/* When to use */}
+        <div>
+          <label className="block fs-ui-xs text-text-muted mb-1.5 uppercase tracking-wide font-bold">
+            When to use
+          </label>
+          <textarea value={whenToUse} onChange={e => setWhenToUse(e.target.value)}
+                    placeholder="e.g. Use this prompt when you need help with dungeon design, NPC backstories, or combat encounters."
+                    rows={2}
+                    className="w-full bg-bg-elevated text-text-bright border border-border rounded-lg px-3 py-2.5 fs-ui-sm resize-y focus:outline-none focus:border-accent placeholder:text-text-muted/40" />
+          <p className="fs-ui-3xs text-text-muted/60 mt-1">Static note — not sent to the model.</p>
+        </div>
 
         <button onClick={save}
                 className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-accent text-accent-text fs-ui-sm font-semibold hover:bg-accent-hover transition-colors">

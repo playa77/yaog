@@ -32,7 +32,7 @@ contextBridge.exposeInMainWorld('api', {
 
   // System Prompts
   promptsList:   ()                    => ipcRenderer.invoke('prompts:list'),
-  promptsSave:   (id, name, text)      => ipcRenderer.invoke('prompts:save', id, name, text),
+  promptsSave:   (id, name, text, whenToUse) => ipcRenderer.invoke('prompts:save', id, name, text, whenToUse),
   promptsDelete: (id)                  => ipcRenderer.invoke('prompts:delete', id),
 
   // Settings
