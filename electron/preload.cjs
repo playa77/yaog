@@ -20,6 +20,7 @@ contextBridge.exposeInMainWorld('api', {
   chatGetMessages:  ()                                      => ipcRenderer.invoke('chat:getMessages'),
   chatGetFullMessages: ()                                   => ipcRenderer.invoke('chat:getFullMessages'),
   chatTokenCount:   ()                                      => ipcRenderer.invoke('chat:tokenCount'),
+  chatTokenCountFull: (text: string)                          => ipcRenderer.invoke('chat:tokenCountFull', text),
 
   // Models
   modelsList:    ()                    => ipcRenderer.invoke('models:list'),

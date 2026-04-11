@@ -12,10 +12,11 @@ interface Props {
   onRemoveFile: (name: string) => void
   apiKeySet: boolean
   onOpenSettings: () => void
+  onInputChange: (text: string) => void
 }
 
 export default function InputBar({
-  onSend, onStop, isStreaming, onAttach, stagedFiles, onRemoveFile, apiKeySet, onOpenSettings,
+  onSend, onStop, isStreaming, onAttach, stagedFiles, onRemoveFile, apiKeySet, onOpenSettings, onInputChange,
 }: Props) {
   const [text, setText] = useState('')
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -83,7 +84,7 @@ export default function InputBar({
         <textarea
           ref={textareaRef}
           value={text}
-          onChange={e => setText(e.target.value)}
+          onChange={e => { setText(e.target.value); onInputChange(e.target.value) }}
           onKeyDown={handleKeyDown}
           placeholder="Write your message… (Ctrl+Enter to send)"
           rows={1}
