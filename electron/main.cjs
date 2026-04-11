@@ -1,5 +1,5 @@
 // electron/main.cjs — YaOG v7 Electron Main Process
-const { app, BrowserWindow, ipcMain, dialog, Menu, clipboard } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, Menu, clipboard, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { execSync } = require('child_process');
@@ -1213,6 +1213,17 @@ function createWindow() {
         detail: 'Your conversation history is saved automatically.',
       });
       if (choice === 1) e.preventDefault();
+    }
+  });
+
+  // ── Prevent in-app navigation from link clicks; open PDFs externally ──
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    const parsed = new URL(url);
+    if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+      event.preventDefault();
+      if (parsed.pathname.toLowerCase().endsWith('.pdf')) {
+        shell.openExternal(url).catch(err => console.error('[NAV] Failed to open PDF:', err.message));
+      }
     }
   });
 

@@ -346,7 +346,7 @@ export default function App() {
         </div>
       </div>
 
-      <div className="flex-1 relative overflow-hidden">
+      <div className="flex-1 relative overflow-visible">
         <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} conversations={conversations}
                  currentConvId={currentConvId} onSelect={loadConversation} onDelete={deleteConversation}
                  onRename={renameConversation} onNew={newChat} />
