@@ -78,7 +78,7 @@ export default function MessageBubble({ message, onEdit, onRegenerate, onDelete,
   }
 
   const startEdit = () => { setEditText(message.raw); setEditing(true) }
-  const saveEdit = () => { if (editText.trim()) onEdit(message.index, editText.trim()); setEditing(false) }
+  const saveEdit = () => { if (editText.trim()) onEdit(message.idx, editText.trim()); setEditing(false) }
 
   return (
     <div className={`group relative py-5 ${isUser ? 'border-l-2 border-accent pl-6 bg-accent-dim/50 -mx-2 px-8 rounded-sm' : ''} mb-1`}>
@@ -156,7 +156,7 @@ export default function MessageBubble({ message, onEdit, onRegenerate, onDelete,
           <span className="fs-ui-xs text-danger flex-1">
             {confirmAction === 'regenerate' ? 'Regenerate this response?' : 'Delete this and all following?'}
           </span>
-          <button onClick={() => { confirmAction === 'regenerate' ? onRegenerate(message.index) : onDelete(message.index); setConfirmAction(null) }}
+          <button onClick={() => { confirmAction === 'regenerate' ? onRegenerate(message.idx) : onDelete(message.idx); setConfirmAction(null) }}
                   className="px-3 py-1 rounded-md bg-danger text-white fs-ui-xs font-bold hover:bg-danger/80 transition-colors">
             {confirmAction === 'regenerate' ? 'Regenerate' : 'Delete'}
           </button>
