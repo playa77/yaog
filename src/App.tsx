@@ -97,7 +97,12 @@ function AppInner({ conversations, setConversations }: {
   const [error, setError] = useState<string | null>(null)
 
   // ── Tab init ──
+  const initRef = useRef(false)
   useEffect(() => {
+    // Prevent double-initialization in StrictMode or if called twice
+    if (initRef.current) return
+    initRef.current = true
+
     if (tabs.length === 0) {
       openTab()
     }
