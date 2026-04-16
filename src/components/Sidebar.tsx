@@ -64,7 +64,7 @@ export default function Sidebar({
         <div className="flex flex-col h-full w-80 shrink-0">
           {/* Header */}
           <div className="flex items-center justify-between px-5 h-14 border-b border-border shrink-0">
-            <h2 className="text-text-bright font-sans font-bold fs-ui-xl tracking-wide">Conversations</h2>
+            <h2 className="text-text-bright font-sans font-bold fs-ui-xl tracking-wide">History</h2>
             <button onClick={onClose} className="p-1.5 rounded-md text-text-muted hover:text-text-bright hover:bg-bg-hover transition-colors">
               <X size={18} />
             </button>

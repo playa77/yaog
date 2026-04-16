@@ -265,11 +265,10 @@ function AppInner({ conversations, setConversations }: {
   // ── Actions ──
   const loadConversation = useCallback(async (id: number) => {
     await loadConversationIntoNewTab(id)
-    setSidebarOpen(false)
   }, [loadConversationIntoNewTab])
 
   const newChat = useCallback(async () => {
-    await window.api.convNew(); openTab(); setSidebarOpen(false)
+    await window.api.convNew(); openTab()
   }, [openTab])
 
   const sendMessage = useCallback(async (text: string) => {
