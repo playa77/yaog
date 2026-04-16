@@ -20,7 +20,7 @@ const TabBar: React.FC = () => {
   if (tabs.length === 0) return null;
 
   return (
-    <div className="h-9 bg-bg-surface border-b border-border flex items-center overflow-x-auto no-scrollbar">
+    <div className="h-9 bg-bg-surface border-b border-border flex items-center overflow-x-auto no-scrollbar shrink-0">
       {tabs.map((tab) => {
         const isActive = tab.id === activeTabId;
         const Icon = tab.conversationId === null ? MessageSquare : FileText;

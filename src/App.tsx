@@ -390,7 +390,7 @@ function AppInner({ conversations, setConversations }: {
 
       {/* Options bar */}
       {activeTab && (
-        <div className="flex items-center gap-4 px-4 py-1.5 bg-bg-surface border-b border-border fs-ui-xs font-sans">
+        <div className="flex items-center gap-4 px-4 py-1.5 bg-bg-surface border-b border-border fs-ui-xs font-sans shrink-0">
           <div className="flex items-center gap-2 text-text-muted">
             <span className="select-none">Markdown</span>
             <Tooltip text={useMarkdown ? 'Markdown formatting enabled' : 'Plain text mode enabled'}>

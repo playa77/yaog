@@ -15,7 +15,7 @@ interface ConversationHeaderProps {
 
 const ConversationHeader: React.FC<ConversationHeaderProps> = ({ title, fullTitle, conversationId, isNew }) => {
   return (
-    <div className="sticky top-0 z-10 px-6 py-4 pb-3 bg-bg border-b border-border bg-opacity-95 backdrop-blur-sm">
+    <div className="shrink-0 z-10 px-6 py-4 pb-3 bg-bg border-b border-border bg-opacity-95 backdrop-blur-sm">
       <h1 className="fs-ui-2xl font-semibold text-text-bright font-sans truncate" title={fullTitle}>
         {fullTitle}
       </h1>
