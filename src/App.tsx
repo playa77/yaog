@@ -375,7 +375,7 @@ function AppInner({ conversations, setConversations }: {
   const selectedPromptMissing = Boolean(selectedPrompt) && !prompts.some(p => p.prompt_text === selectedPrompt)
 
   return (
-    <div className="h-full flex flex-col bg-bg overflow-hidden">
+    <div className="h-screen flex flex-col bg-bg overflow-hidden">
       <Toolbar
         models={models} selectedModel={selectedModel} onModelChange={setSelectedModel}
         temperature={temperature} onTemperatureChange={setTemperature}
@@ -435,7 +435,7 @@ function AppInner({ conversations, setConversations }: {
         </div>
       )}
 
-      <div className="flex-1 relative overflow-visible">
+      <div className="flex-1 relative overflow-hidden flex flex-col">
         <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} conversations={conversations}
                  currentConvId={currentConvId} onOpenInNewTab={loadConversationIntoNewTab} onDelete={deleteConversation}
                  onRename={renameConversation} onNew={newChat} />
