@@ -59,112 +59,109 @@ export default function Sidebar({
 
   return (
     <>
-      {/* Scrim */}
-      {open && (
-        <div className="absolute inset-0 bg-black/50 z-30 animate-fade-in" onClick={onClose} />
-      )}
-
-      {/* Drawer */}
-      <div className={`absolute top-0 left-0 bottom-0 w-80 bg-bg-surface border-r border-border z-40 flex flex-col transition-transform duration-250 ease-[cubic-bezier(0.16,1,0.3,1)] ${open ? 'translate-x-0' : '-translate-x-full'}`}>
-        {/* Header */}
-        <div className="flex items-center justify-between px-5 h-14 border-b border-border shrink-0">
-          <h2 className="text-text-bright font-sans font-bold fs-ui-xl tracking-wide">Conversations</h2>
-          <button onClick={onClose} className="p-1.5 rounded-md text-text-muted hover:text-text-bright hover:bg-bg-hover transition-colors">
-            <X size={18} />
-          </button>
-        </div>
-
-        {/* Actions */}
-        <div className="flex gap-2 px-4 py-3 border-b border-border">
-          <button onClick={onNew}
-                  className="flex-1 flex items-center justify-center gap-2 py-2 rounded-lg bg-accent text-accent-text font-sans font-semibold fs-ui-sm hover:bg-accent-hover transition-colors">
-            <Plus size={16} /> New Chat
-          </button>
-          <Tooltip text="Import JSON">
-            <button onClick={handleImport}
-                    className="p-2 rounded-lg bg-bg-elevated text-text-muted hover:text-text-bright border border-border hover:border-border-light transition-colors">
-              <Upload size={16} />
+      {/* Side Panel */}
+      <div className={`shrink-0 h-full bg-bg-surface border-r border-border z-40 flex flex-col transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] overflow-hidden ${open ? 'w-80' : 'w-0 border-none'}`}>
+        <div className="flex flex-col h-full w-80 shrink-0">
+          {/* Header */}
+          <div className="flex items-center justify-between px-5 h-14 border-b border-border shrink-0">
+            <h2 className="text-text-bright font-sans font-bold fs-ui-xl tracking-wide">Conversations</h2>
+            <button onClick={onClose} className="p-1.5 rounded-md text-text-muted hover:text-text-bright hover:bg-bg-hover transition-colors">
+              <X size={18} />
             </button>
-          </Tooltip>
-        </div>
+          </div>
 
-        {/* List */}
-        <div className="flex-1 overflow-y-auto">
-          {conversations.length === 0 && (
-            <p className="text-text-muted fs-ui-sm text-center py-8 font-sans">No conversations yet</p>
-          )}
-          {conversations.map(c => (
-            <div
-              key={c.id}
-              className={`group relative px-5 py-3.5 cursor-pointer border-b border-white/[0.03] transition-colors ${
-                c.id === currentConvId
-                  ? 'bg-bg-hover border-l-2 border-l-accent text-accent'
-                  : 'text-text-muted hover:bg-bg-elevated hover:text-text'
-              }`}
-              onClick={() => { if (editingId !== c.id) onOpenInNewTab(c.id) }}
-              onContextMenu={e => { e.preventDefault(); setContextId(contextId === c.id ? null : c.id) }}
-            >
-              {editingId === c.id ? (
-                <div className="flex items-center gap-1.5 animate-fade-in" onClick={e => e.stopPropagation()}>
-                  <input
-                    autoFocus
-                    value={editTitle}
-                    onChange={e => setEditTitle(e.target.value)}
-                    onKeyDown={e => { 
-                      if (e.key === 'Enter') confirmRename(); 
-                      if (e.key === 'Escape') cancelRename(); 
-                    }}
-                    className="flex-1 bg-bg-elevated border border-accent/40 rounded px-2 py-1 fs-ui-sm text-text-bright focus:outline-none focus:border-accent"
-                  />
-                  <div className="flex gap-1">
-                    <button onClick={confirmRename}
-                            className="p-1.5 rounded bg-accent text-accent-text hover:bg-accent-hover transition-colors shadow-sm"
-                            title="Save">
-                      <Check size={14} />
+          {/* Actions */}
+          <div className="flex gap-2 px-4 py-3 border-b border-border">
+            <button onClick={onNew}
+                    className="flex-1 flex items-center justify-center gap-2 py-2 rounded-lg bg-accent text-accent-text font-sans font-semibold fs-ui-sm hover:bg-accent-hover transition-colors">
+              <Plus size={16} /> New Chat
+            </button>
+            <Tooltip text="Import JSON">
+              <button onClick={handleImport}
+                      className="p-2 rounded-lg bg-bg-elevated text-text-muted hover:text-text-bright border border-border hover:border-border-light transition-colors">
+                <Upload size={16} />
+              </button>
+            </Tooltip>
+          </div>
+
+          {/* List */}
+          <div className="flex-1 overflow-y-auto">
+            {conversations.length === 0 && (
+              <p className="text-text-muted fs-ui-sm text-center py-8 font-sans">No conversations yet</p>
+            )}
+            {conversations.map(c => (
+              <div
+                key={c.id}
+                className={`group relative px-5 py-3.5 cursor-pointer border-b border-white/[0.03] transition-colors ${
+                  c.id === currentConvId
+                    ? 'bg-bg-hover border-l-2 border-l-accent text-accent'
+                    : 'text-text-muted hover:bg-bg-elevated hover:text-text'
+                }`}
+                onClick={() => { if (editingId !== c.id) onOpenInNewTab(c.id) }}
+                onContextMenu={e => { e.preventDefault(); setContextId(contextId === c.id ? null : c.id) }}
+              >
+                {editingId === c.id ? (
+                  <div className="flex items-center gap-1.5" onClick={e => e.stopPropagation()}>
+                    <input
+                      autoFocus
+                      value={editTitle}
+                      onChange={e => setEditTitle(e.target.value)}
+                      onKeyDown={e => { 
+                        if (e.key === 'Enter') confirmRename(); 
+                        if (e.key === 'Escape') cancelRename(); 
+                      }}
+                      className="flex-1 bg-bg-elevated border border-accent/40 rounded px-2 py-1 fs-ui-sm text-text-bright focus:outline-none focus:border-accent"
+                    />
+                    <div className="flex gap-1">
+                      <button onClick={confirmRename}
+                              className="p-1.5 rounded bg-accent text-accent-text hover:bg-accent-hover transition-colors shadow-sm"
+                              title="Save">
+                        <Check size={14} />
+                      </button>
+                      <button onClick={cancelRename}
+                              className="p-1.5 rounded bg-bg-elevated text-text-muted border border-border hover:bg-bg-hover transition-colors shadow-sm"
+                              title="Cancel">
+                        <X size={14} />
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <span className="fs-ui-sm font-sans line-clamp-1">{c.title}</span>
+                )}
+
+                {/* Hover actions */}
+                {editingId !== c.id && confirmDeleteId !== c.id && (
+                  <div className="absolute right-3 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 flex gap-1 transition-opacity">
+                    <button onClick={e => { e.stopPropagation(); startRename(c) }}
+                            className="p-1 rounded hover:bg-bg-hover text-text-muted hover:text-text-bright">
+                      <Pencil size={13} />
                     </button>
-                    <button onClick={cancelRename}
-                            className="p-1.5 rounded bg-bg-elevated text-text-muted border border-border hover:bg-bg-hover transition-colors shadow-sm"
-                            title="Cancel">
-                      <X size={14} />
+                    <button onClick={e => { e.stopPropagation(); handleExport(c.id) }}
+                            className="p-1 rounded hover:bg-bg-hover text-text-muted hover:text-text-bright">
+                      <Download size={13} />
+                    </button>
+                    <button onClick={e => { e.stopPropagation(); setConfirmDeleteId(c.id) }}
+                            className="p-1 rounded hover:bg-bg-hover text-text-muted hover:text-danger">
+                      <Trash2 size={13} />
                     </button>
                   </div>
-                </div>
-              ) : (
-                <span className="fs-ui-sm font-sans line-clamp-1">{c.title}</span>
-              )}
-
-              {/* Hover actions */}
-              {editingId !== c.id && confirmDeleteId !== c.id && (
-                <div className="absolute right-3 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 flex gap-1 transition-opacity">
-                  <button onClick={e => { e.stopPropagation(); startRename(c) }}
-                          className="p-1 rounded hover:bg-bg-hover text-text-muted hover:text-text-bright">
-                    <Pencil size={13} />
-                  </button>
-                  <button onClick={e => { e.stopPropagation(); handleExport(c.id) }}
-                          className="p-1 rounded hover:bg-bg-hover text-text-muted hover:text-text-bright">
-                    <Download size={13} />
-                  </button>
-                  <button onClick={e => { e.stopPropagation(); setConfirmDeleteId(c.id) }}
-                          className="p-1 rounded hover:bg-bg-hover text-text-muted hover:text-danger">
-                    <Trash2 size={13} />
-                  </button>
-                </div>
-              )}
-              {/* Inline delete confirmation */}
-              {confirmDeleteId === c.id && (
-                <div className="absolute right-2 top-1/2 -translate-y-1/2 flex gap-1.5 animate-fade-in" onClick={e => e.stopPropagation()}>
-                  <button onClick={() => { onDelete(c.id); setConfirmDeleteId(null) }}
-                          className="px-2 py-0.5 rounded bg-danger text-white fs-ui-3xs font-bold hover:bg-danger/80">
-                    Delete
-                  </button>
-                  <button onClick={() => setConfirmDeleteId(null)}
-                          className="px-2 py-0.5 rounded bg-bg-elevated text-text-muted border border-border fs-ui-3xs font-semibold hover:bg-bg-hover">
-                    Cancel
-                  </button>
-                </div>
-              )}
-            </div>
-          ))}
+                )}
+                {/* Inline delete confirmation */}
+                {confirmDeleteId === c.id && (
+                  <div className="absolute right-2 top-1/2 -translate-y-1/2 flex gap-1.5" onClick={e => e.stopPropagation()}>
+                    <button onClick={() => { onDelete(c.id); setConfirmDeleteId(null) }}
+                            className="px-2 py-0.5 rounded bg-danger text-white fs-ui-3xs font-bold hover:bg-danger/80">
+                      Delete
+                    </button>
+                    <button onClick={() => setConfirmDeleteId(null)}
+                            className="px-2 py-0.5 rounded bg-bg-elevated text-text-muted border border-border fs-ui-3xs font-semibold hover:bg-bg-hover">
+                      Cancel
+                    </button>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
         </div>
       </div>
     </>

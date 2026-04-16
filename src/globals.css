@@ -44,15 +44,21 @@ body {
 .fs-mono    { font-family: var(--font-mono); font-size: var(--size-mono); }
 .fs-mono-sm { font-family: var(--font-mono); font-size: calc(var(--size-mono) * 0.88); }
 
-/* ── Scrollbar ── */
-::-webkit-scrollbar { width: 5px; height: 5px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.16); }
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-fade-in {
+  animation: fadeIn 0.15s ease-out forwards;
+}
 
-/* ════════════════════════════════════════════════════════════════
-   Markdown prose inside messages
-   ════════════════════════════════════════════════════════════════ */
+@keyframes breathe {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 0.8; }
+}
+.animate-breathe {
+  animation: breathe 2s ease-in-out infinite;
+}
 .prose-chat {
   font-family: var(--font-chat);
   font-size: var(--size-chat);

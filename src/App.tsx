@@ -103,9 +103,12 @@ function AppInner({ conversations, setConversations }: {
     }
   }, [tabs.length, openTab])
 
-  // Sync state FROM activeTab
+  // Sync state FROM activeTab (only on tab switch)
+  const lastTabId = useRef<string | null>(null)
   useEffect(() => {
-    if (!activeTab) return
+    if (!activeTab || activeTabId === lastTabId.current) return
+    lastTabId.current = activeTabId
+
     setCurrentConvId(activeTab.conversationId)
     setMessages(activeTab.messages)
     setSelectedModel(activeTab.selectedModel)
@@ -123,20 +126,24 @@ function AppInner({ conversations, setConversations }: {
   // Sync state TO activeTab (for things that change locally and need to be preserved)
   useEffect(() => {
     if (!activeTabId) return
-    updateTab(activeTabId, {
-      messages,
-      selectedModel,
-      temperature,
-      selectedPrompt,
-      useWebSearch,
-      isStreaming,
-      streamContent,
-      streamModel,
-      pendingInput,
-      stagedFiles,
-      error,
-      conversationId: currentConvId
-    })
+    // Debounce or only update if truly necessary to avoid loops
+    const timer = setTimeout(() => {
+      updateTab(activeTabId, {
+        messages,
+        selectedModel,
+        temperature,
+        selectedPrompt,
+        useWebSearch,
+        isStreaming,
+        streamContent,
+        streamModel,
+        pendingInput,
+        stagedFiles,
+        error,
+        conversationId: currentConvId
+      })
+    }, 100)
+    return () => clearTimeout(timer)
   }, [
     activeTabId, messages, selectedModel, temperature, selectedPrompt, 
     useWebSearch, isStreaming, streamContent, streamModel, 
@@ -435,44 +442,46 @@ function AppInner({ conversations, setConversations }: {
         </div>
       )}
 
-      <div className="flex-1 relative overflow-hidden flex flex-col">
+      <div className="flex-1 flex overflow-hidden relative">
         <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} conversations={conversations}
                  currentConvId={currentConvId} onOpenInNewTab={loadConversationIntoNewTab} onDelete={deleteConversation}
                  onRename={renameConversation} onNew={newChat} />
         
-        {tabs.length > 0 ? tabs.map(tab => (
-          <TabContent
-            key={tab.id}
-            tab={tab}
-            isActive={tab.id === activeTabId}
-            useMarkdown={useMarkdown}
-            apiKeySet={apiKeySet}
-            onSendMessage={sendMessage}
-            onStopGeneration={stopGeneration}
-            onEditMessage={editMessage}
-            onRegenerateMessage={regenerateMessage}
-            onDeleteMessage={deleteMessage}
-            onAttachFiles={attachFiles}
-            onRemoveStagedFile={removeStagedFile}
-            onInputChange={setPendingInput}
-            onDismissError={() => setError(null)}
-            onOpenSettings={(t) => { setSettingsTab(t); setSettingsOpen(true) }}
-          />
-        )) : (
-          <div className="flex-1 flex flex-col items-center justify-center h-full text-center p-6 animate-fade-in">
-            <div className="text-5xl mb-6 opacity-20">💬</div>
-            <h2 className="text-text-bright font-sans fs-ui-3xl font-bold mb-3">Welcome to YaOG</h2>
-            <p className="text-text-muted font-sans fs-ui-lg max-w-md mb-8 leading-relaxed">
-              Open a conversation from history or start a fresh chat to begin.
-            </p>
-            <button
-              onClick={newChat}
-              className="flex items-center gap-2 px-6 py-3 rounded-xl bg-accent text-accent-text font-sans font-bold fs-ui-lg hover:bg-accent-hover transition-all shadow-lg hover:scale-[1.02] active:scale-[0.98]"
-            >
-              <Plus size={20} /> Start New Chat
-            </button>
-          </div>
-        )}
+        <div className="flex-1 flex flex-col min-w-0 overflow-hidden relative">
+          {tabs.length > 0 ? tabs.map(tab => (
+            <TabContent
+              key={tab.id}
+              tab={tab}
+              isActive={tab.id === activeTabId}
+              useMarkdown={useMarkdown}
+              apiKeySet={apiKeySet}
+              onSendMessage={sendMessage}
+              onStopGeneration={stopGeneration}
+              onEditMessage={editMessage}
+              onRegenerateMessage={regenerateMessage}
+              onDeleteMessage={deleteMessage}
+              onAttachFiles={attachFiles}
+              onRemoveStagedFile={removeStagedFile}
+              onInputChange={setPendingInput}
+              onDismissError={() => setError(null)}
+              onOpenSettings={(t) => { setSettingsTab(t); setSettingsOpen(true) }}
+            />
+          )) : (
+            <div className="flex-1 flex flex-col items-center justify-center h-full text-center p-6 animate-fade-in">
+              <div className="text-5xl mb-6 opacity-20">💬</div>
+              <h2 className="text-text-bright font-sans fs-ui-3xl font-bold mb-3">Welcome to YaOG</h2>
+              <p className="text-text-muted font-sans fs-ui-lg max-w-md mb-8 leading-relaxed">
+                Open a conversation from history or start a fresh chat to begin.
+              </p>
+              <button
+                onClick={newChat}
+                className="flex items-center gap-2 px-6 py-3 rounded-xl bg-accent text-accent-text font-sans font-bold fs-ui-lg hover:bg-accent-hover transition-all shadow-lg hover:scale-[1.02] active:scale-[0.98]"
+              >
+                <Plus size={20} /> Start New Chat
+              </button>
+            </div>
+          )}
+        </div>
       </div>
 
       {activeTab && (
