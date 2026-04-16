@@ -1,3 +1,37 @@
+# YaOG v7.2.0 — Release Notes
+
+**Released:** 2026-04-16
+**Previous:** v7.1.6
+
+---
+
+## Major Improvements
+
+### UI Stability & Layout Integrity
+
+A complete overhaul of the layout engine ensures the UI remains fully visible and responsive at all times.
+
+- **Strict Viewport Constraints**: Added `h-screen` and `overflow-hidden` to the root container to prevent the "out of bounds" bug where the toolbar or tabs could be pushed off-screen.
+- **Improved Side Panel**: The history menu has been converted from an absolute overlay to a proper flex-resizing side panel. Expanding history now correctly reflows the chat window rather than covering it.
+- **Flicker-Free Synchronization**: Implemented debounced state syncing between individual tabs and the global context, resolving high-frequency re-render loops (the "high voltage" flickering).
+- **Tab Lifecycle**: Fixed a double-initialization bug that caused two empty tabs to open on startup.
+
+### Professional Rebranding & Content Refinement
+
+Removed all remaining RPG-themed placeholders and defaults to establish a neutral, professional identity.
+
+- **Neutral System Prompts**: Rewrote "The Dude" to **"The Assistant"** and "The Buddy" to **"The Partner"** with updated professional instructions.
+- **Inter UI Font**: Switched the default interface font to **Inter** for better readability and a modern aesthetic.
+- **Refined Placeholders**: Replaced RPG-themed font previews and system prompt examples with technical and general-purpose text.
+
+### Build & Distribution
+
+- **Dedicated Build Script**: Introduced `build.js` for safe native module rebuilding and cross-platform packaging.
+- **Linux Compatibility**: Integrated a permanent `--no-sandbox` binary wrapper via `afterPack.cjs` to ensure flawless execution on Linux distributions.
+- **API Metadata**: All outgoing OpenRouter requests now include proper `X-Title` and `HTTP-Referer` headers for better service integration.
+
+---
+
 # YaOG v7.1.6 — Release Notes
 
 **Released:** 2026-03-19
@@ -43,84 +77,11 @@ YaOG now fully delegates reasoning behavior to OpenRouter/model defaults while p
 
 ---
 
-## Critical Fixes
-
-### Attachment content no longer leaks into chat
-
-v7.0.0 had a regression from v5 where the raw contents of attached documents were rendered directly inside chat message bubbles. A 500-line Python file would appear inline as part of the user's message. This was caused by the display layer running the full stored message — including hidden file-content blocks — through the markdown renderer on every backend refresh.
-
-**Fix:** A `stripFileContent()` pipeline now separates the API payload (which still includes full document text for the model) from the display layer (which shows only the user's typed message plus compact 📎 filename badges). A CSS safety net (`display: none !important`) on `.yaog-file-content` blocks catches any edge case.
-
-### AppImage sandbox crash resolved
-
-The built AppImage would crash immediately with `FATAL:setuid_sandbox_host.cc` because Chromium's SUID sandbox check runs before any Node flags are parsed — making `app.commandLine.appendSwitch('no-sandbox')` useless.
-
-**Fix:** An `afterPack` electron-builder hook (`build/afterPack.cjs`) renames the real Electron binary to `yaog.bin` and replaces it with a bash wrapper that passes `--no-sandbox` on the command line before Chromium starts. The hook is robust: it tries `productFilename`, `executableName`, and `name`, then falls back to ELF magic-byte scanning.
-
----
-
-## New Features
-
-### PDF support
-
-PDFs are now first-class citizens. The file dialog lists them by default (no more "All Files" hunting), and the processing pipeline uses a three-strategy cascade:
-
-1. **`pdftotext -layout`** (poppler-utils) — best quality, preserves layout
-2. **`pdf-parse`** (Node library, bundled) — always available, no system deps
-3. **Raw string extraction** — last-resort fallback for damaged or exotic PDFs
-
-For best results, install poppler-utils: `sudo apt install poppler-utils`.
-
-### Archive processing pipeline
-
-Attachments are no longer naively read as UTF-8 and dumped. A proper ingestion pipeline handles:
-
-- **ZIP** / JAR / EPUB — list contents, extract text files with size limits
-- **tar** / tar.gz / tar.bz2 / tar.xz — same treatment
-- **RAR** — via `unrar` (graceful error message if not installed)
-- **7z** — listing via `7z` command
-- **gzip** (single file) — Node zlib decompression
-- **JSON** — pretty-printed via `JSON.stringify(..., null, 2)`
-- **Binary detection** — null-byte scan on first 8 KB, clean rejection message
-
-Per-file limit: 512 KB. Per-archive total: 2 MB.
-
-### Context menu (right-click)
-
-Electron's native context menu was completely absent. Right-clicking anywhere now shows the appropriate menu: Cut/Copy/Paste/Undo/Redo/Select All in editable fields, Copy/Select All on selected text.
-
-### Close confirmation
-
-Closing the window now prompts "Close the application?" with a native dialog. Togglable in Settings → General.
-
-### Granular copy system
-
-**Per message** (dropdown arrow next to the copy button):
-
-- **Copy as Text** — markdown formatting stripped, plain text
-- **Copy as Markdown** — raw source preserved
-- **Copy with Attachments** — full content including hidden document payloads (only shown when attachments are present)
-
-**Per conversation** (clipboard icon in toolbar):
-
-- **Copy Conversation (Text)** — all messages with `[You]`/`[Model]` labels, markdown stripped
-- **Copy Conversation (Markdown)** — labels + raw markdown preserved
-- **Copy Full Context** — everything including system prompt and all hidden attachment blocks
-
-All copy operations use Electron's native clipboard API for reliability.
-
-### Actually scalable font settings
-
-v7.0.0's font size sliders were decorative — every component used hardcoded Tailwind classes (`text-xs`, `text-sm`, `text-[11px]`) that ignored the CSS variables. Moving the slider changed nothing.
-
-**Fix:** A complete `fs-ui-*` class system (3xs through 4xl) replaces all hardcoded sizes. Every class derives from `calc(var(--size-ui) * factor)`, so the entire interface scales when the slider moves. The monospace font now has its own size slider too — all three font categories (chat, interface, code) have independent font family and size controls.
-
----
-
 ## Version History
 
 | Version | Date | Summary |
 |---------|------|---------|
+| 7.2.0 | 2026-04-16 | UI stability, multi-tab fixes, professional content rewrite, build script |
 | 7.1.6 | 2026-03-19 | Versioning consistency pass only |
 | 7.1.5 | 2026-03-19 | Removed reasoning controls and related parameter plumbing |
 | 7.1.1 | 2025-02-20 | PDF support, archive pipeline, context menu, copy system, close confirm, font scaling fix, sandbox fix |

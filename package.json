@@ -1,7 +1,7 @@
 {
   "name": "yaog",
-  "version": "7.1.6",
-  "description": "Yet another OpenRouter GUI — immersive AI chat for solo & group RPG",
+  "version": "7.2.0",
+  "description": "Yet another OpenRouter GUI — immersive AI chat client",
   "author": {
     "name": "Dave Martin",
     "email": "playa77@gmail.com"

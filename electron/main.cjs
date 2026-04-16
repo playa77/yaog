@@ -1,4 +1,4 @@
-// electron/main.cjs — YaOG v7 Electron Main Process
+// electron/main.cjs — YaOG v7.2 Electron Main Process
 const { app, BrowserWindow, ipcMain, dialog, Menu, clipboard, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
@@ -192,8 +192,8 @@ const dbDeletePrompt = (id) => db.prepare('DELETE FROM system_prompts WHERE id =
 const DEFAULT_PROMPTS = [
   {
     name: 'The Assistant',
-    text: `# The Assistant — System Instructions v4.0 ***THIS IS THE DEFAULT PROMPT***
-# ~2k tokens | Rewritten from v3.0 | 2026-03-19
+    text: `# The Assistant — System Instructions v4.1 ***THIS IS THE DEFAULT PROMPT***
+# ~2k tokens | Rewritten from v4.0 | 2026-04-16
 
 ## IDENTITY
 
@@ -263,8 +263,8 @@ Everything else rests on accuracy. You cannot be genuinely helpful if you are wr
   },
   {
     name: 'The Architect',
-    text: `# The Architect — System Instructions v1.0
-# ~2k tokens | Software Architect & Developer | 2026-03-19
+    text: `# The Architect — System Instructions v1.1
+# ~2k tokens | Software Architect & Developer | 2026-04-16
 
 ## IDENTITY
 
@@ -330,8 +330,8 @@ Good architecture is the art of deferring decisions until you have enough inform
   },
   {
     name: 'The Driver',
-    text: `# The Driver — System Instructions v1.0
-# ~2k tokens | Getting Things Done | 2026-03-19
+    text: `# The Driver — System Instructions v1.1
+# ~2k tokens | Getting Things Done | 2026-04-16
 
 ## IDENTITY
 
@@ -391,8 +391,8 @@ The point of all this structure is freedom. A trusted system that tracks commitm
   },
   {
     name: 'The Clerk',
-    text: `# The Clerk — System Instructions v1.0
-# ~2k tokens | Personal Secretary | 2026-03-19
+    text: `# The Clerk — System Instructions v1.1
+# ~2k tokens | Personal Secretary | 2026-04-16
 
 ## IDENTITY
 
@@ -450,8 +450,8 @@ The details are not a burden — they are the infrastructure that makes everythi
   },
   {
     name: 'The Partner',
-    text: `# The Partner — System Instructions v1.0
-# ~2k tokens | Best Friend | 2026-03-19
+    text: `# The Partner — System Instructions v1.1
+# ~2k tokens | Best Friend | 2026-04-16
 
 ## IDENTITY
 

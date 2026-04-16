@@ -1,10 +1,10 @@
-# YaOG v7.1.6 — Yet another OpenRouter GUI
+# YaOG v7.2.0 — Yet another OpenRouter GUI
 
 Immersive AI chat client. Dark ebook-reader aesthetic, modern web stack.
 
 ## Stack
 
-- **Electron** — Desktop shell (Ubuntu → Android next)
+- **Electron** — Desktop shell
 - **React 19 + TypeScript** — UI
 - **Vite** — Build / HMR
 - **Tailwind CSS** — Styling
@@ -37,47 +37,41 @@ npm run dev
 ## Architecture
 
 ```
-build/
-  afterPack.cjs   → Linux sandbox fix (binary wrapper hook)
+build.js          → Automated build script (rebuilds native modules + packages)
 electron/
-  main.cjs        → Backend: window, SQLite, API streaming, IPC,
-                     file processing pipeline (PDF, archives, binary detection)
+  main.cjs        → Backend: window, SQLite, API streaming, IPC, file processing
   preload.cjs     → Context bridge (typed API for renderer)
+  afterPack.cjs   → Linux sandbox fix (binary wrapper hook)
 src/
-  App.tsx          → State management, layout, stream handling, copy system
+  App.tsx          → Root component, state management, global event handling
+  contexts/
+    TabContext.tsx → Multi-tab state management & synchronization
   components/
-    Toolbar.tsx    → Model picker, temperature, nav, conversation copy
-    Sidebar.tsx    → Slide-out history drawer
-    ChatView.tsx   → Message list + streaming
-    MessageBubble.tsx → Individual message with copy dropdown
-    InputBar.tsx   → Text input, attachments, send/stop
-    SettingsSheet.tsx → Settings, API key, models, prompts, fonts
-  globals.css      → Tailwind + scalable font system + prose styles
-  types.ts         → TypeScript types + window.api declaration
+    Toolbar.tsx    → Model selection, temperature, settings, copy actions
+    TabBar.tsx     → Navigation between open chat sessions
+    Sidebar.tsx    → History management (resizing side panel)
+    ChatView.tsx   → Scrollable message list with auto-scroll logic
+    MessageBubble.tsx → Individual message units with granular copy menu
+    InputBar.tsx   → Multi-line text input with file attachment support
+    SettingsSheet.tsx → Global configuration (API, Models, Prompts, Fonts)
 ```
 
 ## Features
 
-- [x] Streaming responses from any OpenRouter model
-- [x] System prompts (create, save, load, edit, delete)
-- [x] Markdown rendering with syntax highlighting
-- [x] Conversation history (create, load, rename, delete)
-- [x] Message edit, regenerate, delete with branching
-- [x] File attachments — text, code, PDF, archives (zip/tar/rar/7z)
-- [x] PDF text extraction (poppler-utils or pdf-parse fallback)
-- [x] Granular copy (per-message: text/markdown/with-attachments; per-conversation: text/markdown/full-context)
-- [x] Native context menu (right-click cut/copy/paste everywhere)
-- [x] Chat import/export (JSON)
-- [x] Token count estimate
-- [x] Temperature control
-- [x] Web search toggle (OpenRouter web plugin)
-- [x] Full font customization — family and size for chat, UI, and monospace
-- [x] Close confirmation (togglable)
-- [x] Dark immersive theme
+- [x] **Multi-Tab Interface** — Keep multiple conversations open and sync state between them.
+- [x] **Stable Layout** — High-integrity flexbox UI that prevents content overflow.
+- [x] **Resizing Sidebar** — History drawer that reflows the main chat area.
+- [x] **Professional Prompts** — Curated system instructions for architects, assistants, and partners.
+- [x] **Streaming API** — Real-time responses from any OpenRouter model.
+- [x] **Markdown Rendering** — Clean typography with syntax highlighting for code.
+- [x] **Document Ingestion** — Support for PDF, ZIP, TAR, RAR, and 7Z with text extraction.
+- [x] **Granular Copy** — Specialized copy modes (Markdown, Plain Text, Full Context).
+- [x] **Font Customization** — Independent family/size controls for Chat, UI (Inter), and Code.
+- [x] **Local Database** — All history stored securely in a local SQLite file.
 
 ## Migrating from v5
 
-Your old database at `~/.or-client/or-client.db` is auto-detected and copied to `~/.yaog/yaog.db` on first launch. Your conversations are preserved.
+Your old database at `~/.or-client/or-client.db` is auto-detected and copied to `~/.yaog/yaog.db` on first launch.
 
 ## Building for Distribution
 
@@ -86,50 +80,6 @@ npm run build
 ```
 
 Produces AppImage and .deb in `dist/`. The AppImage includes a `--no-sandbox` wrapper for Linux compatibility.
-
-## Recovering from an interrupted merge
-
-If you see:
-
-- `CONFLICT (content)` in `electron/main.cjs` / `src/App.tsx`
-- followed by `fatal: Exiting because of an unresolved conflict.` on the next `git merge`
-
-your repository is mid-merge and needs to be finished (or aborted) before trying again.
-
-### Option A: Abort and return to a clean branch
-
-```bash
-git merge --abort
-git status
-```
-
-### Option B: Resolve and complete the merge
-
-```bash
-# open files and remove conflict markers
-$EDITOR electron/main.cjs src/App.tsx
-
-# confirm there are no markers left
-rg -n "<<<<<<<|=======|>>>>>>>" electron/main.cjs src/App.tsx
-
-# mark resolved, then commit the merge
-git add electron/main.cjs src/App.tsx
-git commit
-```
-
-After either option, you can run `git merge <branch>` again.
-
-### Optional system dependencies
-
-For best PDF text extraction quality:
-```bash
-sudo apt install poppler-utils
-```
-
-For RAR archive support:
-```bash
-sudo apt install unrar
-```
 
 ## License
 

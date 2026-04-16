@@ -477,6 +477,6 @@ npm run build
 ### 8.3 Deployment Notes
 - Electron-builder configuration unchanged
 - AppImage sandbox wrapper (`afterPack.cjs`) unchanged
-- Version remains 7.1.6 (or bump to 7.2.0)
+- Version remains 7.2.0
 
 ---
