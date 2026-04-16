@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import { Plus } from 'lucide-react'
 import { Marked } from 'marked'
 import hljs from 'highlight.js'
 import type { Conversation, Message, Model, SystemPrompt, FileAttachment, ChatOpts, LoadedConversation, DisplayMessage } from './types'

@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { Copy, Check, Pencil, RefreshCw, Trash2, ChevronDown } from 'lucide-react'
-import type { DisplayMessage } from '../App'
+import type { DisplayMessage } from '../types'
 import Tooltip from './Tooltip'
 
 interface Props {

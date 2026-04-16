@@ -3,7 +3,7 @@ import { Marked } from 'marked'
 import hljs from 'highlight.js'
 import { AlertCircle, X } from 'lucide-react'
 import MessageBubble from './MessageBubble'
-import type { DisplayMessage } from '../App'
+import type { DisplayMessage } from '../types'
 
 const marked = new Marked({
   gfm: true,

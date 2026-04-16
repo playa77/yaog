@@ -47,7 +47,7 @@
   "build": {
     "appId": "com.yaog.app",
     "productName": "YaOG",
-    "afterPack": "./build/afterPack.cjs",
+    "afterPack": "./electron/afterPack.cjs",
     "files": [
       "dist/**/*",
       "electron/**/*",
