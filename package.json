@@ -11,7 +11,7 @@
   "main": "electron/main.cjs",
   "scripts": {
     "dev": "concurrently -k \"vite\" \"wait-on http://localhost:5173 && electron . --no-sandbox\"",
-    "build": "vite build && electron-builder",
+    "build": "node build.js",
     "preview": "vite preview",
     "postinstall": "electron-rebuild -f -w better-sqlite3",
     "rebuild": "electron-rebuild -f -w better-sqlite3"

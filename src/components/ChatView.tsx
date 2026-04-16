@@ -59,7 +59,7 @@ export default function ChatView({
             <div className="text-4xl mb-4 opacity-20">💬</div>
             <h2 className="text-text-muted font-sans fs-ui-2xl font-semibold mb-2">Ready to chat</h2>
             <p className="text-text-muted/60 font-sans fs-ui-sm max-w-sm">
-              Choose your model, set a system prompt, and begin.
+              Select a model, configure your system prompt, and begin your conversation.
             </p>
           </div>
         )}

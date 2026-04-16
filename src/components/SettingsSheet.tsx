@@ -130,14 +130,14 @@ function GeneralTab() {
 
 // Popular web-safe + Google Fonts options
 const SERIF_FONTS = ['Literata', 'Georgia', 'Merriweather', 'Lora', 'Noto Serif', 'Crimson Pro', 'Source Serif 4', 'EB Garamond', 'Libre Baskerville', 'Playfair Display']
-const SANS_FONTS  = ['DM Sans', 'Inter', 'Roboto', 'Open Sans', 'Lato', 'Noto Sans', 'Source Sans 3', 'Nunito', 'Poppins', 'Fira Sans', 'IBM Plex Sans', 'Ubuntu']
+const SANS_FONTS  = ['Inter', 'Roboto', 'Open Sans', 'Lato', 'Noto Sans', 'Source Sans 3', 'Nunito', 'Poppins', 'Fira Sans', 'IBM Plex Sans', 'Ubuntu']
 const MONO_FONTS  = ['JetBrains Mono', 'Fira Code', 'Source Code Pro', 'Roboto Mono', 'Ubuntu Mono', 'Inconsolata', 'IBM Plex Mono', 'Cascadia Code', 'Noto Sans Mono', 'Courier New']
 
 const DEFAULTS: FontSettings = {
   chat_font_size: 16.5,
   chat_font_family: 'Literata',
   ui_font_size: 13,
-  ui_font_family: 'DM Sans',
+  ui_font_family: 'Inter',
   mono_font_family: 'JetBrains Mono',
   mono_font_size: 14,
 }
@@ -196,7 +196,7 @@ function FontsTab({ fontSettings, onFontSettingsChange }: { fontSettings: FontSe
         onSizeChange={v => update('chat_font_size', v)}
         sizeMin={10} sizeMax={32} sizeStep={0.5}
         previewFont={fontSettings.chat_font_family}
-        previewText="The adventurer stepped into the dimly lit cavern, torch flickering against ancient walls."
+        previewText="The quick brown fox jumps over the lazy dog."
       />
 
       {/* UI font */}
@@ -211,7 +211,7 @@ function FontsTab({ fontSettings, onFontSettingsChange }: { fontSettings: FontSe
         onSizeChange={v => update('ui_font_size', v)}
         sizeMin={9} sizeMax={24} sizeStep={0.5}
         previewFont={fontSettings.ui_font_family}
-        previewText="New Chat · Settings · Temperature 0.70 · Web Search"
+        previewText="Settings · Model Selection · Temperature · Search"
       />
 
       {/* Mono font — NOW WITH SIZE CONTROL */}
@@ -226,7 +226,7 @@ function FontsTab({ fontSettings, onFontSettingsChange }: { fontSettings: FontSe
         onSizeChange={v => update('mono_font_size', v)}
         sizeMin={9} sizeMax={24} sizeStep={0.5}
         previewFont={fontSettings.mono_font_family}
-        previewText='const adventure = await openDoor("ancient_ruins");'
+        previewText='function initializeApp() { return "System Ready"; }'
       />
     </div>
   )
@@ -630,7 +630,7 @@ function PromptsTab({ prompts, onPromptsChange }: { prompts: SystemPrompt[]; onP
                className="w-full bg-bg-elevated text-text-bright border border-border rounded-lg px-3 py-2 fs-ui-sm focus:outline-none focus:border-accent" />
 
         <textarea value={content} onChange={e => setContent(e.target.value)}
-                  placeholder="You are a seasoned dungeon master who creates immersive, dark fantasy worlds…"
+                  placeholder="You are a helpful and concise assistant..."
                   rows={6}
                   className="w-full bg-bg-elevated text-text-bright border border-border rounded-lg px-3 py-2.5 fs-ui-sm focus:outline-none focus:border-accent resize-none overflow-y-auto max-h-[300px]" />
 
@@ -640,7 +640,7 @@ function PromptsTab({ prompts, onPromptsChange }: { prompts: SystemPrompt[]; onP
             When to use
           </label>
           <textarea value={whenToUse} onChange={e => setWhenToUse(e.target.value)}
-                    placeholder="e.g. Use this prompt when you need help with dungeon design, NPC backstories, or combat encounters."
+                    placeholder="e.g. Use this prompt for technical writing, creative brainstorming, or general assistance."
                     rows={2}
                     className="w-full bg-bg-elevated text-text-bright border border-border rounded-lg px-3 py-2.5 fs-ui-sm focus:outline-none focus:border-accent placeholder:text-text-muted/40 resize-none overflow-y-auto max-h-[100px]" />
           <p className="fs-ui-3xs text-text-muted/60 mt-1">Static note — not sent to the model.</p>

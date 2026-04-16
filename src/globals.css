@@ -5,7 +5,7 @@
 /* ── CSS custom properties (set by React from settings) ── */
 :root {
   --font-chat: 'Literata', Georgia, serif;
-  --font-ui: 'DM Sans', system-ui, sans-serif;
+  --font-ui: 'Inter', system-ui, sans-serif;
   --font-mono: 'JetBrains Mono', Consolas, monospace;
   --size-chat: 16.5px;
   --size-ui: 13px;

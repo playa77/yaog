@@ -196,7 +196,7 @@ function AppInner({ conversations, setConversations }: {
       if (mdls.length > 0) setSelectedModel(mdls[0].id)
       const fs = {
         chat_font_size: settings.chat_font_size ?? 16.5, chat_font_family: settings.chat_font_family ?? 'Literata',
-        ui_font_size: settings.ui_font_size ?? 13, ui_font_family: settings.ui_font_family ?? 'DM Sans',
+        ui_font_size: settings.ui_font_size ?? 13, ui_font_family: settings.ui_font_family ?? 'Inter',
         mono_font_family: settings.mono_font_family ?? 'JetBrains Mono', mono_font_size: settings.mono_font_size ?? 14,
       }
       setFontSettings(fs); applyFontSettings(fs)
@@ -475,7 +475,7 @@ function AppInner({ conversations, setConversations }: {
               </p>
               <button
                 onClick={newChat}
-                className="flex items-center gap-2 px-6 py-3 rounded-xl bg-accent text-accent-text font-sans font-bold fs-ui-lg hover:bg-accent-hover transition-all shadow-lg hover:scale-[1.02] active:scale-[0.98]"
+                className="flex items-center gap-2 px-6 py-3 rounded-xl bg-accent text-accent-text font-sans font-semibold fs-ui-lg hover:bg-accent-hover transition-all shadow-lg hover:scale-[1.02] active:scale-[0.98]"
               >
                 <Plus size={20} /> Start New Chat
               </button>
