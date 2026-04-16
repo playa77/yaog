@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { X, Plus, Trash2, Pencil, Download, Upload } from 'lucide-react'
+import { X, Plus, Trash2, Pencil, Download, Upload, Check } from 'lucide-react'
 import type { Conversation } from '../types'
 import Tooltip from './Tooltip'
 
@@ -8,14 +8,14 @@ interface Props {
   onClose: () => void
   conversations: Conversation[]
   currentConvId: number | null
-  onSelect: (id: number) => void
+  onOpenInNewTab: (id: number) => void
   onDelete: (id: number) => void
   onRename: (id: number, title: string) => void
   onNew: () => void
 }
 
 export default function Sidebar({
-  open, onClose, conversations, currentConvId, onSelect, onDelete, onRename, onNew,
+  open, onClose, conversations, currentConvId, onOpenInNewTab, onDelete, onRename, onNew,
 }: Props) {
   const [editingId, setEditingId] = useState<number | null>(null)
   const [editTitle, setEditTitle] = useState('')
@@ -33,6 +33,11 @@ export default function Sidebar({
       onRename(editingId, editTitle.trim())
     }
     setEditingId(null)
+  }
+
+  const cancelRename = () => {
+    setEditingId(null)
+    setEditTitle('')
   }
 
   const handleExport = async (id: number) => {
@@ -96,19 +101,34 @@ export default function Sidebar({
                   ? 'bg-bg-hover border-l-2 border-l-accent text-accent'
                   : 'text-text-muted hover:bg-bg-elevated hover:text-text'
               }`}
-              onClick={() => { if (editingId !== c.id) onSelect(c.id) }}
+              onClick={() => { if (editingId !== c.id) onOpenInNewTab(c.id) }}
               onContextMenu={e => { e.preventDefault(); setContextId(contextId === c.id ? null : c.id) }}
             >
               {editingId === c.id ? (
-                <input
-                  autoFocus
-                  value={editTitle}
-                  onChange={e => setEditTitle(e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter') confirmRename(); if (e.key === 'Escape') setEditingId(null) }}
-                  onBlur={confirmRename}
-                  className="w-full bg-bg-elevated border border-accent rounded px-2 py-1 fs-ui-sm text-text-bright focus:outline-none"
-                  onClick={e => e.stopPropagation()}
-                />
+                <div className="flex items-center gap-1.5 animate-fade-in" onClick={e => e.stopPropagation()}>
+                  <input
+                    autoFocus
+                    value={editTitle}
+                    onChange={e => setEditTitle(e.target.value)}
+                    onKeyDown={e => { 
+                      if (e.key === 'Enter') confirmRename(); 
+                      if (e.key === 'Escape') cancelRename(); 
+                    }}
+                    className="flex-1 bg-bg-elevated border border-accent/40 rounded px-2 py-1 fs-ui-sm text-text-bright focus:outline-none focus:border-accent"
+                  />
+                  <div className="flex gap-1">
+                    <button onClick={confirmRename}
+                            className="p-1.5 rounded bg-accent text-accent-text hover:bg-accent-hover transition-colors shadow-sm"
+                            title="Save">
+                      <Check size={14} />
+                    </button>
+                    <button onClick={cancelRename}
+                            className="p-1.5 rounded bg-bg-elevated text-text-muted border border-border hover:bg-bg-hover transition-colors shadow-sm"
+                            title="Cancel">
+                      <X size={14} />
+                    </button>
+                  </div>
+                </div>
               ) : (
                 <span className="fs-ui-sm font-sans line-clamp-1">{c.title}</span>
               )}

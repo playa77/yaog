@@ -632,7 +632,7 @@ function PromptsTab({ prompts, onPromptsChange }: { prompts: SystemPrompt[]; onP
         <textarea value={content} onChange={e => setContent(e.target.value)}
                   placeholder="You are a seasoned dungeon master who creates immersive, dark fantasy worlds…"
                   rows={6}
-                  className="w-full bg-bg-elevated text-text-bright border border-border rounded-lg px-3 py-2.5 fs-ui-sm resize-y focus:outline-none focus:border-accent" />
+                  className="w-full bg-bg-elevated text-text-bright border border-border rounded-lg px-3 py-2.5 fs-ui-sm focus:outline-none focus:border-accent resize-none overflow-y-auto max-h-[300px]" />
 
         {/* When to use */}
         <div>
@@ -642,7 +642,7 @@ function PromptsTab({ prompts, onPromptsChange }: { prompts: SystemPrompt[]; onP
           <textarea value={whenToUse} onChange={e => setWhenToUse(e.target.value)}
                     placeholder="e.g. Use this prompt when you need help with dungeon design, NPC backstories, or combat encounters."
                     rows={2}
-                    className="w-full bg-bg-elevated text-text-bright border border-border rounded-lg px-3 py-2.5 fs-ui-sm resize-y focus:outline-none focus:border-accent placeholder:text-text-muted/40" />
+                    className="w-full bg-bg-elevated text-text-bright border border-border rounded-lg px-3 py-2.5 fs-ui-sm focus:outline-none focus:border-accent placeholder:text-text-muted/40 resize-none overflow-y-auto max-h-[100px]" />
           <p className="fs-ui-3xs text-text-muted/60 mt-1">Static note — not sent to the model.</p>
         </div>
 

@@ -1,6 +1,6 @@
 # YaOG v7.1.6 — Yet another OpenRouter GUI
 
-Immersive AI chat client built for solo & group RPG. Dark ebook-reader aesthetic, modern web stack.
+Immersive AI chat client. Dark ebook-reader aesthetic, modern web stack.
 
 ## Stack
 

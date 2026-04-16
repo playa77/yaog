@@ -1,11 +1,12 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { Marked } from 'marked'
 import hljs from 'highlight.js'
-import type { Conversation, Message, Model, SystemPrompt, FileAttachment, ChatOpts, LoadedConversation } from './types'
-import Sidebar from './components/Sidebar'
+import type { Conversation, Message, Model, SystemPrompt, FileAttachment, ChatOpts, LoadedConversation, DisplayMessage } from './types'
+import { TabProvider, useTabContext } from './contexts/TabContext'
 import Toolbar from './components/Toolbar'
-import ChatView from './components/ChatView'
-import InputBar from './components/InputBar'
+import TabBar from './components/TabBar'
+import TabContent from './components/TabContent'
+import Sidebar from './components/Sidebar'
 import SettingsSheet from './components/SettingsSheet'
 import Tooltip from './components/Tooltip'
 
@@ -63,39 +64,92 @@ function stripMarkdown(md: string): string {
     .trim()
 }
 
-// ── Display message type ──
-export interface DisplayMessage {
-  idx: number       // actual backend array index (stable across edits)
-  role: 'user' | 'assistant' | 'system'
-  html: string
-  raw: string       // user-typed text only (file content stripped)
-  fullRaw: string   // FULL raw content including file blocks
-  model: string
-}
-
 
 export default function App() {
-  // ── State ──
   const [conversations, setConversations] = useState<Conversation[]>([])
+
+  return (
+    <TabProvider conversations={conversations}>
+      <AppInner conversations={conversations} setConversations={setConversations} />
+    </TabProvider>
+  )
+}
+
+function AppInner({ conversations, setConversations }: { 
+  conversations: Conversation[], 
+  setConversations: React.Dispatch<React.SetStateAction<Conversation[]>> 
+}) {
+  const { tabs, activeTabId, activeTab, openTab, closeTab, updateTab, loadConversationIntoNewTab, saveTabToBackend, updateTabsForConversation } = useTabContext()
+
+  // ── State synced with Active Tab ──
   const [currentConvId, setCurrentConvId] = useState<number | null>(null)
   const [messages, setMessages] = useState<DisplayMessage[]>([])
-  const [models, setModels] = useState<Model[]>([])
-  const [prompts, setPrompts] = useState<SystemPrompt[]>([])
   const [selectedModel, setSelectedModel] = useState('')
   const [temperature, setTemperature] = useState(1.0)
   const [selectedPrompt, setSelectedPrompt] = useState<string | null>(null)
-  const [useMarkdown, setUseMarkdown] = useState(true)
   const [useWebSearch, setUseWebSearch] = useState(false)
   const [isStreaming, setIsStreaming] = useState(false)
   const [streamContent, setStreamContent] = useState('')
   const [streamModel, setStreamModel] = useState('')
+  const [pendingInput, setPendingInput] = useState('')
+  const [stagedFiles, setStagedFiles] = useState<FileAttachment[]>([])
+  const [error, setError] = useState<string | null>(null)
+
+  // ── Tab init ──
+  useEffect(() => {
+    if (tabs.length === 0) {
+      openTab()
+    }
+  }, [tabs.length, openTab])
+
+  // Sync state FROM activeTab
+  useEffect(() => {
+    if (!activeTab) return
+    setCurrentConvId(activeTab.conversationId)
+    setMessages(activeTab.messages)
+    setSelectedModel(activeTab.selectedModel)
+    setTemperature(activeTab.temperature)
+    setSelectedPrompt(activeTab.selectedPrompt)
+    setUseWebSearch(activeTab.useWebSearch)
+    setIsStreaming(activeTab.isStreaming)
+    setStreamContent(activeTab.streamContent)
+    setStreamModel(activeTab.streamModel)
+    setPendingInput(activeTab.pendingInput)
+    setStagedFiles(activeTab.stagedFiles)
+    setError(activeTab.error)
+  }, [activeTabId, activeTab])
+
+  // Sync state TO activeTab (for things that change locally and need to be preserved)
+  useEffect(() => {
+    if (!activeTabId) return
+    updateTab(activeTabId, {
+      messages,
+      selectedModel,
+      temperature,
+      selectedPrompt,
+      useWebSearch,
+      isStreaming,
+      streamContent,
+      streamModel,
+      pendingInput,
+      stagedFiles,
+      error,
+      conversationId: currentConvId
+    })
+  }, [
+    activeTabId, messages, selectedModel, temperature, selectedPrompt, 
+    useWebSearch, isStreaming, streamContent, streamModel, 
+    pendingInput, stagedFiles, error, currentConvId, updateTab
+  ])
+
+  // ── Other State ──
+  const [models, setModels] = useState<Model[]>([])
+  const [prompts, setPrompts] = useState<SystemPrompt[]>([])
+  const [useMarkdown, setUseMarkdown] = useState(true)
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [settingsTab, setSettingsTab] = useState<string>('general')
   const [tokenCount, setTokenCount] = useState(0)
-  const [pendingInput, setPendingInput] = useState('')
-  const [stagedFiles, setStagedFiles] = useState<FileAttachment[]>([])
-  const [error, setError] = useState<string | null>(null)
   const [apiKeySet, setApiKeySet] = useState(false)
   const [fontSettings, setFontSettings] = useState({
     chat_font_size: 16.5, chat_font_family: 'Literata',
@@ -140,7 +194,7 @@ export default function App() {
       setFontSettings(fs); applyFontSettings(fs)
     }
     init()
-  }, [applyFontSettings])
+  }, [applyFontSettings, setConversations])
 
   // ── Stream events ──
   useEffect(() => {
@@ -197,22 +251,16 @@ export default function App() {
 
   // ── Actions ──
   const loadConversation = useCallback(async (id: number) => {
-    const loaded: LoadedConversation = await window.api.convLoad(id)
-    const msgs = loaded.messages
-    setCurrentConvId(id)
-    setMessages(renderMessages(msgs))
-    if (loaded.state.modelId) setSelectedModel(loaded.state.modelId)
-    if (typeof loaded.state.temperature === 'number') setTemperature(loaded.state.temperature)
-    setSelectedPrompt(loaded.state.systemPrompt)
-    setUseWebSearch(loaded.state.webSearch)
-    setTokenCount(await window.api.chatTokenCount()); setSidebarOpen(false)
-  }, [renderMessages])
+    await loadConversationIntoNewTab(id)
+    setSidebarOpen(false)
+  }, [loadConversationIntoNewTab])
 
   const newChat = useCallback(async () => {
-    await window.api.convNew(); setCurrentConvId(null); setMessages([]); setTokenCount(0); setSidebarOpen(false)
-  }, [])
+    await window.api.convNew(); openTab(); setSidebarOpen(false)
+  }, [openTab])
 
   const sendMessage = useCallback(async (text: string) => {
+    if (activeTabId) await saveTabToBackend(activeTabId)
     if (isStreaming || (!text.trim() && stagedFiles.length === 0)) return
     const fileNames = stagedFiles.map(f => f.name)
     const badges = attachmentBadgesHtml(fileNames)
@@ -225,38 +273,54 @@ export default function App() {
       role: 'user' as const, html: badges + userHtml, raw: text, fullRaw: fullText, model: '',
     }])
     const result = await window.api.chatSend(fullText, selectedModel, temperature, selectedPrompt, chatOpts())
-    if (result?.conversations) { setConversations(result.conversations); if (!currentConvId && result.conversations.length > 0) setCurrentConvId(result.conversations[0].id) }
-  }, [isStreaming, stagedFiles, selectedModel, temperature, selectedPrompt, chatOpts, useMarkdown, currentConvId])
+    if (result?.conversations) { 
+      setConversations(result.conversations)
+      if (!currentConvId && result.conversations.length > 0) {
+        // Find the newly created conversation ID
+        const newConv = result.conversations[0]
+        setCurrentConvId(newConv.id)
+        updateTab(activeTabId, { title: newConv.title, fullTitle: newConv.title, conversationId: newConv.id })
+      }
+    }
+  }, [activeTabId, saveTabToBackend, isStreaming, stagedFiles, selectedModel, temperature, selectedPrompt, chatOpts, useMarkdown, currentConvId, setConversations, updateTab])
 
   const stopGeneration = useCallback(async () => { await window.api.chatStop() }, [])
 
   const editMessage = useCallback(async (index: number, content: string) => {
+    if (activeTabId) await saveTabToBackend(activeTabId)
     setError(null)
     const result = await window.api.chatEdit(index, content, selectedModel, temperature, chatOpts())
     if (result?.conversations) setConversations(result.conversations)
     setMessages(renderMessages(await window.api.chatGetMessages()))
-  }, [selectedModel, temperature, chatOpts, renderMessages])
+  }, [activeTabId, saveTabToBackend, selectedModel, temperature, chatOpts, renderMessages, setConversations])
 
   const regenerateMessage = useCallback(async (index: number) => {
+    if (activeTabId) await saveTabToBackend(activeTabId)
     setError(null)
     const result = await window.api.chatRegenerate(index, selectedModel, temperature, chatOpts())
     if (result?.conversations) setConversations(result.conversations)
     setMessages(renderMessages(await window.api.chatGetMessages()))
-  }, [selectedModel, temperature, chatOpts, renderMessages])
+  }, [activeTabId, saveTabToBackend, selectedModel, temperature, chatOpts, renderMessages, setConversations])
 
   const deleteMessage = useCallback(async (index: number) => {
+    if (activeTabId) await saveTabToBackend(activeTabId)
     const result = await window.api.chatDeleteMsg(index)
     if (result) { setMessages(renderMessages(result.messages)); setTokenCount(result.tokenCount) }
-  }, [renderMessages])
+  }, [activeTabId, saveTabToBackend, renderMessages])
 
   const deleteConversation = useCallback(async (id: number) => {
     await window.api.convDelete(id); setConversations(prev => prev.filter(c => c.id !== id))
-    if (currentConvId === id) { setCurrentConvId(null); setMessages([]); setTokenCount(0) }
-  }, [currentConvId])
+    // Also close any tabs with this conversation
+    tabs.filter(t => t.conversationId === id).forEach(t => {
+      closeTab(t.id)
+    })
+  }, [setConversations, tabs, closeTab])
 
   const renameConversation = useCallback(async (id: number, title: string) => {
     await window.api.convRename(id, title); setConversations(prev => prev.map(c => c.id === id ? { ...c, title } : c))
-  }, [])
+    // Update tabs with this conversation
+    updateTabsForConversation(id, title)
+  }, [setConversations, updateTabsForConversation])
 
   const attachFiles = useCallback(async () => {
     const files = await window.api.dialogOpenFiles()
@@ -267,6 +331,7 @@ export default function App() {
 
   // ── Conversation-level copy ──
   const copyConversation = useCallback(async (mode: 'text' | 'markdown' | 'full') => {
+    if (activeTabId) await saveTabToBackend(activeTabId)
     // For 'full' mode, get messages WITH file content blocks from backend
     const msgs = mode === 'full'
       ? await window.api.chatGetFullMessages()
@@ -293,13 +358,17 @@ export default function App() {
 
     const result = parts.join('\n\n---\n\n')
     await window.api.clipboardWrite(result)
-  }, [])
+  }, [activeTabId, saveTabToBackend])
 
   // Re-render on markdown toggle
   useEffect(() => {
-    async function refresh() { const msgs = await window.api.chatGetMessages(); if (msgs.length > 0) setMessages(renderMessages(msgs)) }
+    async function refresh() { 
+      if (!activeTabId) return
+      const msgs = await window.api.chatGetMessages(); 
+      if (msgs.length > 0) setMessages(renderMessages(msgs)) 
+    }
     refresh()
-  }, [useMarkdown, renderMessages])
+  }, [useMarkdown, renderMessages, activeTabId])
 
   // ── Layout ──
   const selectedPromptMissing = Boolean(selectedPrompt) && !prompts.some(p => p.prompt_text === selectedPrompt)
@@ -316,69 +385,101 @@ export default function App() {
         hasMessages={messages.length > 0}
       />
 
+      <TabBar />
+
       {/* Options bar */}
-      <div className="flex items-center gap-4 px-4 py-1.5 bg-bg-surface border-b border-border fs-ui-xs font-sans">
-        <div className="flex items-center gap-2 text-text-muted">
-          <span className="select-none">Markdown</span>
-          <Tooltip text={useMarkdown ? 'Markdown formatting enabled' : 'Plain text mode enabled'}>
-            <input
-              type="range"
-              min={0}
-              max={1}
-              step={1}
-              value={useMarkdown ? 1 : 0}
-              onChange={e => setUseMarkdown(Number(e.target.value) >= 1)}
-              className="w-[2.8rem] h-1 accent-accent cursor-pointer"
-              aria-label="Markdown"
-              title={useMarkdown ? 'Markdown formatting enabled' : 'Plain text mode enabled'}
-            />
-          </Tooltip>
+      {activeTab && (
+        <div className="flex items-center gap-4 px-4 py-1.5 bg-bg-surface border-b border-border fs-ui-xs font-sans">
+          <div className="flex items-center gap-2 text-text-muted">
+            <span className="select-none">Markdown</span>
+            <Tooltip text={useMarkdown ? 'Markdown formatting enabled' : 'Plain text mode enabled'}>
+              <input
+                type="range"
+                min={0}
+                max={1}
+                step={1}
+                value={useMarkdown ? 1 : 0}
+                onChange={e => setUseMarkdown(Number(e.target.value) >= 1)}
+                className="w-[2.8rem] h-1 accent-accent cursor-pointer"
+                aria-label="Markdown"
+                title={useMarkdown ? 'Markdown formatting enabled' : 'Plain text mode enabled'}
+              />
+            </Tooltip>
+          </div>
+          <div className="flex items-center gap-2 text-text-muted">
+            <span className="select-none">Web Search</span>
+            <Tooltip text={webSearchTooltip}>
+              <input
+                type="range"
+                min={0}
+                max={1}
+                step={1}
+                value={useWebSearch ? 1 : 0}
+                onChange={e => setUseWebSearch(Number(e.target.value) >= 1)}
+                className="w-[2.8rem] h-1 accent-accent cursor-pointer"
+                aria-label="Web Search"
+                title={webSearchTooltip}
+              />
+            </Tooltip>
+          </div>
+          <div className="ml-auto flex items-center gap-3">
+            <button onClick={() => { setSettingsTab('prompts'); setSettingsOpen(true) }} className="text-text-muted hover:text-accent transition-colors">Prompts</button>
+            <select value={selectedPrompt || ''} onChange={e => setSelectedPrompt(e.target.value || null)}
+                    className="bg-bg-elevated text-text-muted border border-border rounded px-2 py-0.5 fs-ui-xs max-w-[200px]">
+              <option value="">No system prompt</option>
+              {selectedPromptMissing && <option value={selectedPrompt || ''}>Loaded prompt (custom)</option>}
+              {prompts.map(p => <option key={p.id} value={p.prompt_text}>{p.name}</option>)}
+            </select>
+          </div>
         </div>
-        <div className="flex items-center gap-2 text-text-muted">
-          <span className="select-none">Web Search</span>
-          <Tooltip text={webSearchTooltip}>
-            <input
-              type="range"
-              min={0}
-              max={1}
-              step={1}
-              value={useWebSearch ? 1 : 0}
-              onChange={e => setUseWebSearch(Number(e.target.value) >= 1)}
-              className="w-[2.8rem] h-1 accent-accent cursor-pointer"
-              aria-label="Web Search"
-              title={webSearchTooltip}
-            />
-          </Tooltip>
-        </div>
-        <div className="ml-auto flex items-center gap-3">
-          <button onClick={() => { setSettingsTab('prompts'); setSettingsOpen(true) }} className="text-text-muted hover:text-accent transition-colors">Prompts</button>
-          <select value={selectedPrompt || ''} onChange={e => setSelectedPrompt(e.target.value || null)}
-                  className="bg-bg-elevated text-text-muted border border-border rounded px-2 py-0.5 fs-ui-xs max-w-[200px]">
-            <option value="">No system prompt</option>
-            {selectedPromptMissing && <option value={selectedPrompt || ''}>Loaded prompt (custom)</option>}
-            {prompts.map(p => <option key={p.id} value={p.prompt_text}>{p.name}</option>)}
-          </select>
-        </div>
-      </div>
+      )}
 
       <div className="flex-1 relative overflow-visible">
         <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} conversations={conversations}
-                 currentConvId={currentConvId} onSelect={loadConversation} onDelete={deleteConversation}
+                 currentConvId={currentConvId} onOpenInNewTab={loadConversationIntoNewTab} onDelete={deleteConversation}
                  onRename={renameConversation} onNew={newChat} />
-        <ChatView messages={messages} isStreaming={isStreaming} streamContent={streamContent} streamModel={streamModel}
-                  useMarkdown={useMarkdown} onEdit={editMessage} onRegenerate={regenerateMessage} onDelete={deleteMessage}
-                  error={error} onDismissError={() => setError(null)} />
+        
+        {tabs.length > 0 ? tabs.map(tab => (
+          <TabContent
+            key={tab.id}
+            tab={tab}
+            isActive={tab.id === activeTabId}
+            useMarkdown={useMarkdown}
+            apiKeySet={apiKeySet}
+            onSendMessage={sendMessage}
+            onStopGeneration={stopGeneration}
+            onEditMessage={editMessage}
+            onRegenerateMessage={regenerateMessage}
+            onDeleteMessage={deleteMessage}
+            onAttachFiles={attachFiles}
+            onRemoveStagedFile={removeStagedFile}
+            onInputChange={setPendingInput}
+            onDismissError={() => setError(null)}
+            onOpenSettings={(t) => { setSettingsTab(t); setSettingsOpen(true) }}
+          />
+        )) : (
+          <div className="flex-1 flex flex-col items-center justify-center h-full text-center p-6 animate-fade-in">
+            <div className="text-5xl mb-6 opacity-20">💬</div>
+            <h2 className="text-text-bright font-sans fs-ui-3xl font-bold mb-3">Welcome to YaOG</h2>
+            <p className="text-text-muted font-sans fs-ui-lg max-w-md mb-8 leading-relaxed">
+              Open a conversation from history or start a fresh chat to begin.
+            </p>
+            <button
+              onClick={newChat}
+              className="flex items-center gap-2 px-6 py-3 rounded-xl bg-accent text-accent-text font-sans font-bold fs-ui-lg hover:bg-accent-hover transition-all shadow-lg hover:scale-[1.02] active:scale-[0.98]"
+            >
+              <Plus size={20} /> Start New Chat
+            </button>
+          </div>
+        )}
       </div>
 
-      <InputBar onSend={sendMessage} onStop={stopGeneration} isStreaming={isStreaming} onAttach={attachFiles}
-                stagedFiles={stagedFiles} onRemoveFile={removeStagedFile} apiKeySet={apiKeySet}
-                onOpenSettings={() => { setSettingsTab('api'); setSettingsOpen(true) }}
-                onInputChange={setPendingInput} />
-
-      <SettingsSheet open={settingsOpen} onClose={() => setSettingsOpen(false)} tab={settingsTab} onTabChange={setSettingsTab}
-                     models={models} onModelsChange={setModels} prompts={prompts} onPromptsChange={setPrompts}
-                     onApiKeyChange={setApiKeySet} fontSettings={fontSettings}
-                     onFontSettingsChange={updated => { setFontSettings(updated); applyFontSettings(updated) }} />
+      {activeTab && (
+        <SettingsSheet open={settingsOpen} onClose={() => setSettingsOpen(false)} tab={settingsTab} onTabChange={setSettingsTab}
+                       models={models} onModelsChange={setModels} prompts={prompts} onPromptsChange={setPrompts}
+                       onApiKeyChange={setApiKeySet} fontSettings={fontSettings}
+                       onFontSettingsChange={updated => { setFontSettings(updated); applyFontSettings(updated) }} />
+      )}
     </div>
   )
 }

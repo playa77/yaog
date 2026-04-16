@@ -48,6 +48,51 @@ export interface FileAttachment {
   content: string;
 }
 
+export interface DisplayMessage {
+  idx: number;      // actual backend array index (stable across edits)
+  role: 'user' | 'assistant' | 'system';
+  html: string;
+  raw: string;      // user-typed text only (file content stripped)
+  fullRaw: string;  // FULL raw content including file blocks
+  model: string;
+}
+
+export interface TabState {
+  id: string;
+  conversationId: number | null;
+  title: string;
+  fullTitle: string;
+  messages: DisplayMessage[];
+  selectedModel: string;
+  temperature: number;
+  selectedPrompt: string | null;
+  useWebSearch: boolean;
+  isStreaming: boolean;
+  streamContent: string;
+  streamModel: string;
+  error: string | null;
+  pendingInput: string;
+  stagedFiles: FileAttachment[];
+  isNew: boolean;
+  isDirty: boolean;
+}
+
+export interface TabContextType {
+  tabs: TabState[];
+  activeTabId: string;
+  activeTab: TabState;
+  openTab: (options?: { conversationId?: number; title?: string }) => string;
+  closeTab: (tabId: string) => void;
+  switchTab: (tabId: string) => Promise<void>;
+  updateTab: (tabId: string, updates: Partial<TabState>) => void;
+  reorderTabs: (fromIndex: number, toIndex: number) => void;
+  saveTabToBackend: (tabId: string) => Promise<void>;
+  loadConversationIntoNewTab: (conversationId: number) => Promise<string>;
+  findTabByConversationId: (conversationId: number) => string | null;
+  getTabIndex: (tabId: string) => number;
+  updateTabsForConversation: (conversationId: number, title: string) => void;
+}
+
 export interface AppSettings {
   api_timeout: number;
   chat_font_size: number;

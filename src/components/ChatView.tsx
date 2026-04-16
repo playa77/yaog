@@ -54,10 +54,10 @@ export default function ChatView({
       <div className="max-w-3xl mx-auto px-6 py-8 pb-20">
         {messages.length === 0 && !isStreaming && (
           <div className="flex flex-col items-center justify-center h-[60vh] text-center">
-            <div className="text-4xl mb-4 opacity-20">⚔️</div>
-            <h2 className="text-text-muted font-sans fs-ui-2xl font-semibold mb-2">Ready for adventure</h2>
+            <div className="text-4xl mb-4 opacity-20">💬</div>
+            <h2 className="text-text-muted font-sans fs-ui-2xl font-semibold mb-2">Ready to chat</h2>
             <p className="text-text-muted/60 font-sans fs-ui-sm max-w-sm">
-              Choose your model, set a system prompt for your world, and begin.
+              Choose your model, set a system prompt, and begin.
             </p>
           </div>
         )}
