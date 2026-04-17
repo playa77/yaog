@@ -11,12 +11,13 @@ interface Props {
   stagedFiles: FileAttachment[]
   onRemoveFile: (name: string) => void
   apiKeySet: boolean
+  memoriesActive: boolean
   onOpenSettings: () => void
   onInputChange: (text: string) => void
 }
 
 export default function InputBar({
-  onSend, onStop, isStreaming, onAttach, stagedFiles, onRemoveFile, apiKeySet, onOpenSettings, onInputChange,
+  onSend, onStop, isStreaming, onAttach, stagedFiles, onRemoveFile, apiKeySet, memoriesActive, onOpenSettings, onInputChange,
 }: Props) {
   const [text, setText] = useState('')
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -83,12 +84,24 @@ export default function InputBar({
 
       {/* Input row */}
       <div className="flex items-end gap-2">
-        <Tooltip text="Attach files">
-          <button onClick={onAttach}
-                  className="p-2.5 rounded-xl text-text-muted hover:text-accent hover:bg-accent-dim transition-colors shrink-0 mb-0.5">
-            <Paperclip size={18} />
-          </button>
-        </Tooltip>
+        <div className="flex flex-col items-center gap-1.5 shrink-0">
+          <div
+            className={`px-2 py-1 rounded-md fs-ui-3xs font-semibold text-center leading-tight border ${
+              memoriesActive
+                ? 'text-accent bg-accent/10 border-accent/30'
+                : 'text-text-muted/60 bg-bg border-border'
+            }`}
+          >
+            <span className="block">Memories</span>
+            <span className="block">active</span>
+          </div>
+          <Tooltip text="Attach files">
+            <button onClick={onAttach}
+                    className="p-2.5 rounded-xl text-text-muted hover:text-accent hover:bg-accent-dim transition-colors mb-0.5">
+              <Paperclip size={18} />
+            </button>
+          </Tooltip>
+        </div>
 
         <textarea
           ref={textareaRef}

@@ -150,6 +150,7 @@ function AppInner({ conversations, setConversations }: {
   const [settingsTab, setSettingsTab] = useState<string>('general')
   const [tokenCount, setTokenCount] = useState(0)
   const [apiKeySet, setApiKeySet] = useState(false)
+  const [memoriesActive, setMemoriesActive] = useState(false)
   const [fontSettings, setFontSettings] = useState({
     chat_font_size: 16.5, chat_font_family: 'Literata',
     ui_font_size: 13, ui_font_family: 'Inter',
@@ -182,6 +183,7 @@ function AppInner({ conversations, setConversations }: {
         window.api.convList(), window.api.modelsList(), window.api.promptsList(), window.api.settingsGet(),
       ])
       setConversations(convs); setModels(mdls); setPrompts(prms); setApiKeySet(settings.apiKeySet)
+      setMemoriesActive(Boolean(settings.use_memories))
       if (mdls.length > 0) setSelectedModel(mdls[0].id)
       const fs = {
         chat_font_size: settings.chat_font_size ?? 16.5, chat_font_family: settings.chat_font_family ?? 'Literata',
@@ -464,6 +466,7 @@ function AppInner({ conversations, setConversations }: {
               isActive={tab.id === activeTabId}
               useMarkdown={useMarkdown}
               apiKeySet={apiKeySet}
+              memoriesActive={memoriesActive}
               onSendMessage={sendMessage}
               onStopGeneration={stopGeneration}
               onEditMessage={editMessage}
@@ -496,7 +499,7 @@ function AppInner({ conversations, setConversations }: {
       {activeTab && (
         <SettingsSheet open={settingsOpen} onClose={() => setSettingsOpen(false)} tab={settingsTab} onTabChange={setSettingsTab}
                        models={models} onModelsChange={setModels} prompts={prompts} onPromptsChange={setPrompts}
-                       onApiKeyChange={setApiKeySet} fontSettings={fontSettings}
+                       onApiKeyChange={setApiKeySet} onMemoriesChange={setMemoriesActive} fontSettings={fontSettings}
                        onFontSettingsChange={updated => { setFontSettings(updated); applyFontSettings(updated) }} />
       )}
     </div>

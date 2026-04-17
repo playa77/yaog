@@ -22,6 +22,7 @@ interface Props {
   prompts: SystemPrompt[]
   onPromptsChange: (prompts: SystemPrompt[]) => void
   onApiKeyChange: (set: boolean) => void
+  onMemoriesChange: (active: boolean) => void
   fontSettings: FontSettings
   onFontSettingsChange: (settings: FontSettings) => void
 }
@@ -30,11 +31,12 @@ const TABS = [
   { id: 'general', label: 'General' },
   { id: 'fonts', label: 'Fonts' },
   { id: 'api', label: 'API Key' },
+  { id: 'memories', label: 'Memories' },
   { id: 'models', label: 'Models' },
   { id: 'prompts', label: 'Prompts' },
 ]
 
-export default function SettingsSheet({ open, onClose, tab, onTabChange, models, onModelsChange, prompts, onPromptsChange, onApiKeyChange, fontSettings, onFontSettingsChange }: Props) {
+export default function SettingsSheet({ open, onClose, tab, onTabChange, models, onModelsChange, prompts, onPromptsChange, onApiKeyChange, onMemoriesChange, fontSettings, onFontSettingsChange }: Props) {
   if (!open) return null
 
   return (
@@ -75,11 +77,73 @@ export default function SettingsSheet({ open, onClose, tab, onTabChange, models,
             {tab === 'general' && <GeneralTab />}
             {tab === 'fonts' && <FontsTab fontSettings={fontSettings} onFontSettingsChange={onFontSettingsChange} />}
             {tab === 'api' && <ApiTab onApiKeyChange={onApiKeyChange} />}
+            {tab === 'memories' && <MemoriesTab onMemoriesChange={onMemoriesChange} />}
             {tab === 'models' && <ModelsTab models={models} onModelsChange={onModelsChange} />}
             {tab === 'prompts' && <PromptsTab prompts={prompts} onPromptsChange={onPromptsChange} />}
           </div>
         </div>
       </div>
+    </div>
+  )
+}
+
+// ── Memories Tab ──
+const MEMORIES_CHAR_LIMIT = 28000 // ~7k tokens at ~4 chars/token
+
+function MemoriesTab({ onMemoriesChange }: { onMemoriesChange: (active: boolean) => void }) {
+  const [useMemories, setUseMemories] = useState(false)
+  const [memoriesText, setMemoriesText] = useState('')
+  const [saved, setSaved] = useState(false)
+
+  useEffect(() => {
+    window.api.settingsGet().then(s => {
+      setUseMemories(Boolean(s.use_memories))
+      setMemoriesText(String(s.memories_text || ''))
+    })
+  }, [])
+
+  const save = async () => {
+    const trimmed = memoriesText.slice(0, MEMORIES_CHAR_LIMIT)
+    await window.api.settingsSet('use_memories', useMemories)
+    await window.api.settingsSet('memories_text', trimmed)
+    setMemoriesText(trimmed)
+    setSaved(true)
+    onMemoriesChange(useMemories)
+    setTimeout(() => setSaved(false), 2000)
+  }
+
+  return (
+    <div className="space-y-4">
+      <h3 className="text-text-bright font-semibold fs-ui-xl">Memories</h3>
+
+      <label className="flex items-center gap-2.5 cursor-pointer select-none">
+        <input type="checkbox" checked={useMemories} onChange={e => setUseMemories(e.target.checked)} className="accent-accent w-4 h-4" />
+        <span className="fs-ui-sm text-text-muted">Use memories</span>
+      </label>
+
+      <div>
+        <textarea
+          value={memoriesText}
+          onChange={e => setMemoriesText(e.target.value.slice(0, MEMORIES_CHAR_LIMIT))}
+          disabled={!useMemories}
+          rows={10}
+          placeholder="Add persistent preferences, context, writing style notes, and other information you want applied to every conversation."
+          className={`w-full rounded-lg px-3 py-2.5 fs-ui-sm resize-none border focus:outline-none ${
+            useMemories
+              ? 'bg-bg-elevated text-text-bright border-border focus:border-accent'
+              : 'bg-bg text-text-muted/60 border-border/60 cursor-not-allowed'
+          }`}
+        />
+        <div className="mt-1 flex items-center justify-between">
+          <p className="fs-ui-xs text-text-muted">These memories are private to your local app and not shown in chat history.</p>
+          <p className="fs-ui-xs text-text-muted">{memoriesText.length.toLocaleString()} / {MEMORIES_CHAR_LIMIT.toLocaleString()}</p>
+        </div>
+      </div>
+
+      <button onClick={save}
+              className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-accent text-accent-text fs-ui-sm font-semibold hover:bg-accent-hover transition-colors">
+        {saved ? <><Save size={14} /> Saved!</> : <><Save size={14} /> Save</>}
+      </button>
     </div>
   )
 }

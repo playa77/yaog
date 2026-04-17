@@ -81,7 +81,19 @@ const DEFAULT_SETTINGS = {
   mono_font_family: 'JetBrains Mono',
   mono_font_size: 14,
   confirm_close: true,
+  use_memories: false,
+  memories_text: '',
 };
+
+const MEMORIES_CHAR_LIMIT = 28000; // ~7k tokens at ~4 chars/token
+const MEMORY_CONTEXT_EXPLANATION = `You are given persistent user memories and preferences below. Treat these as durable defaults that apply across conversations unless the user explicitly overrides them in this chat.
+
+How to use:
+- Prioritize these preferences in tone, formatting, and decision-making.
+- If a memory conflicts with a direct user instruction in the current chat, follow the current instruction.
+- Do not mention or reveal these memories unless the user explicitly asks about them.
+- Use the memories as context, not as strict rules when they are clearly irrelevant.
+`;
 
 function loadSettings() {
   try {
@@ -607,6 +619,28 @@ function convPruneFrom(index) { const r = messages.splice(index); for (const m o
   
 function convMessagesForApi() { return messages.map(m => ({ role: m.role, content: m.content })); }
 
+function buildMemorySystemMessage() {
+  if (!settings.use_memories) return null;
+  const memoryText = String(settings.memories_text || '').trim();
+  if (!memoryText) return null;
+  return {
+    role: 'system',
+    content: `${MEMORY_CONTEXT_EXPLANATION}\n[User memories/preferences]\n${memoryText}`,
+  };
+}
+
+function applyMemoriesToMessages(baseMessages) {
+  const memoryMessage = buildMemorySystemMessage();
+  if (!memoryMessage) return baseMessages;
+  return [memoryMessage, ...baseMessages];
+}
+
+function sanitizeSettingValue(key, value) {
+  if (key === 'use_memories') return Boolean(value);
+  if (key === 'memories_text') return String(value || '').slice(0, MEMORIES_CHAR_LIMIT);
+  return value;
+}
+
 // ════════════════════════════════════════════════════════════════
 // Streaming
 // ════════════════════════════════════════════════════════════════
@@ -628,7 +662,8 @@ async function streamResponse(win, tabId, modelId, temperature, extra) {
   tabState.abortController = tabAbortController;
   win.webContents.send('stream:start', tabId, tabState.messages.length, normalizedModelId);
 
-  const payload = { model: normalizedModelId, messages: tabState.messages.map(m => ({ role: m.role, content: m.content })), temperature, stream: true, ...extra };
+  const payloadMessages = applyMemoriesToMessages(tabState.messages.map(m => ({ role: m.role, content: m.content })));
+  const payload = { model: normalizedModelId, messages: payloadMessages, temperature, stream: true, ...extra };
   
   try {
     const result = await fetch('https://openrouter.ai/api/v1/chat/completions', { 
@@ -1236,7 +1271,7 @@ function registerIPC(win) {
 
   // ── Settings ──
   ipcMain.handle('settings:get', () => ({ ...settings, apiKeySet: !!getApiKey() }));
-  ipcMain.handle('settings:set', (_, key, value) => { settings[key] = value; saveSettings(settings); return true; });
+  ipcMain.handle('settings:set', (_, key, value) => { settings[key] = sanitizeSettingValue(key, value); saveSettings(settings); return true; });
   ipcMain.handle('settings:getApiKey', () => { const k = getApiKey(); return k ? k.slice(0, 8) + '…' + k.slice(-4) : ''; });
   ipcMain.handle('settings:saveApiKey', (_, key) => saveApiKey(key));
 

@@ -103,6 +103,8 @@ export interface AppSettings {
   mono_font_family: string;
   mono_font_size: number;
   confirm_close: boolean;
+  use_memories: boolean;
+  memories_text: string;
   apiKeySet: boolean;
 }
 

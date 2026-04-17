@@ -10,6 +10,7 @@ interface TabContentProps {
   // Temporary: passing actions and state from App.tsx until state is fully migrated to context
   useMarkdown: boolean;
   apiKeySet: boolean;
+  memoriesActive: boolean;
   onSendMessage: (text: string) => void;
   onStopGeneration: () => void;
   onEditMessage: (index: number, content: string) => void;
@@ -27,6 +28,7 @@ const TabContent: React.FC<TabContentProps> = ({
   isActive,
   useMarkdown,
   apiKeySet,
+  memoriesActive,
   onSendMessage,
   onStopGeneration,
   onEditMessage,
@@ -70,6 +72,7 @@ const TabContent: React.FC<TabContentProps> = ({
         stagedFiles={tab.stagedFiles}
         onRemoveFile={onRemoveStagedFile}
         apiKeySet={apiKeySet}
+        memoriesActive={memoriesActive}
         onOpenSettings={() => onOpenSettings('api')}
         onInputChange={onInputChange}
       />
