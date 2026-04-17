@@ -40,3 +40,5 @@ npm-debug.log*
 # Misc
 *.tgz
 .cache/
+ideas*
+yaog.zip

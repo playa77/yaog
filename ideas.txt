@@ -23,3 +23,12 @@ conversation name is never shown, except, in the history pane/window/menu. unwan
 once i try to rename any convo from history, there is not single ui element for confirmation. the only way to confirm any change is to blindly hit return and hope for the best.
 
 when adding/editing the prompt, i cannot scroll the field that contains the actual prompt instruction, i can not scroll in that field. instead their is a little handle at the low right corner where you can change the field size, dragging with the mouse. this is unwanted and absolutely terrible ui design.  
+
+*********
+
+good job, codex. i have merged and released your previous changes. 
+now we proceed with another new, important feature -- implement simple memories.
+memories, just like ChatGPT and Claude uses them, but a very basic version, manually curated by the user.
+this will first be implemented as a new settings mask. for now, the user manages all memories manually. on the memories mask/tab in the settings, there is an input field, that is only editable if a "use memories" checkbox is checked.
+there must be a limit to the amount of text you can put in there (the character equivalent to maximum 8 k tokens of memory text).
+if memories are active, the contents of the memories field is appended to the start of each conversation, along with a proper explanation that these are the user's general memories/preferences. in the conversation, the attached memories will not be visible to the user. instead, whenever memories are active, a little tag/label is shown above the attach/paper clip button, that says "Memories active" (in two lines). whenever memories are not active, this is clearly greyed out and the difference is very easily discernable.
