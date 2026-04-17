@@ -81,8 +81,8 @@ export interface TabContextType {
   tabs: TabState[];
   activeTabId: string;
   activeTab: TabState;
-  openTab: (options?: { conversationId?: number; title?: string }) => string;
-  closeTab: (tabId: string) => void;
+  openTab: (options?: { conversationId?: number; title?: string }) => Promise<string>;
+  closeTab: (tabId: string) => Promise<void>;
   switchTab: (tabId: string) => Promise<void>;
   updateTab: (tabId: string, updates: Partial<TabState>) => void;
   reorderTabs: (fromIndex: number, toIndex: number) => void;
@@ -120,14 +120,15 @@ declare global {
       tabSwitch: (tabId: string | null) => Promise<boolean>;
       tabClose: (tabId: string) => Promise<boolean>;
 
-      chatSend: (text: string, modelId: string, temp: number, sysPrompt: string | null, opts: ChatOpts) => Promise<{ conversations: Conversation[]; tokenCount: number }>;
-      chatStop: () => Promise<boolean>;
-      chatEdit: (index: number, content: string, modelId: string, temp: number, opts: ChatOpts) => Promise<{ conversations: Conversation[]; tokenCount: number }>;
-      chatRegenerate: (index: number, modelId: string, temp: number, opts: ChatOpts) => Promise<{ conversations: Conversation[]; tokenCount: number }>;
-      chatDeleteMsg: (index: number) => Promise<{ messages: Message[]; tokenCount: number }>;
-      chatGetMessages: () => Promise<Message[]>;
-      chatGetFullMessages: () => Promise<Message[]>;
-      chatTokenCount: () => Promise<number>;
+      chatSend: (tabId: string, text: string, modelId: string, temp: number, sysPrompt: string | null, opts: ChatOpts) => Promise<{ conversations: Conversation[]; tokenCount: number }>;
+      chatStop: (tabId: string) => Promise<boolean>;
+      chatEdit: (tabId: string, index: number, content: string, modelId: string, temp: number, opts: ChatOpts) => Promise<{ conversations: Conversation[]; tokenCount: number }>;
+      chatRegenerate: (tabId: string, index: number, modelId: string, temp: number, opts: ChatOpts) => Promise<{ conversations: Conversation[]; tokenCount: number }>;
+      chatDeleteMsg: (tabId: string, index: number) => Promise<{ messages: Message[]; tokenCount: number }>;
+      chatGetMessages: (tabId: string) => Promise<Message[]>;
+      chatGetFullMessages: (tabId: string) => Promise<Message[]>;
+      chatTokenCount: (tabId: string) => Promise<number>;
+      chatTokenCountFull: (tabId: string, text: string) => Promise<number>;
 
       modelsList: () => Promise<Model[]>;
       modelsAdd: (name: string, id: string) => Promise<Model[]>;
@@ -151,10 +152,10 @@ declare global {
       dialogSaveFile: (name: string, content: string) => Promise<boolean>;
       dialogImportFile: () => Promise<string | null>;
 
-      onStreamStart: (cb: (index: number, model: string) => void) => void;
-      onStreamToken: (cb: (text: string) => void) => void;
-      onStreamDone: (cb: (content: string) => void) => void;
-      onStreamError: (cb: (msg: string) => void) => void;
+      onStreamStart: (cb: (tabId: string, index: number, model: string) => void) => void;
+      onStreamToken: (cb: (tabId: string, text: string) => void) => void;
+      onStreamDone: (cb: (tabId: string, content: string) => void) => void;
+      onStreamError: (cb: (tabId: string, msg: string) => void) => void;
     };
   }
 }

@@ -571,11 +571,6 @@ function convInsertSystem(content) {
   const msgId = dbAddMessage(currentConvId, 'system', content, null, null);
   messages.unshift({ id: msgId, role: 'system', content, model_used: null, temperature_used: null });
 }
-function convLoad(id) { 
-  currentConvId = id; 
-  messages = dbGetMessages(id); 
-  
-}
 function getConversationState() {
   const system = messages.find(m => m.role === 'system');
   const lastWithModel = [...messages].reverse().find(m => typeof m.model_used === 'string' && m.model_used.trim().length > 0) || null;
@@ -591,28 +586,6 @@ function getConversationState() {
     temperature: lastWithTemp ? Number(lastWithTemp.temperature_used) : null,
     webSearch,
   };
-}
-function convAddMessage(role, content, model, temp) {
-  if (!currentConvId) {
-    let t = content.replace(/<div class="yaog-file-content"[^>]*>[\s\S]*?<\/div>/g, '').trim();
-    if (!t) t = 'New Chat';
-
-    currentConvId = dbAddConversation(t.length > 40 ? t.slice(0, 40) + '…' : t);
-  }
-  const msgId = dbAddMessage(currentConvId, role, content, model, temp);
-  messages.push({ id: msgId, role, content, model_used: model, temperature_used: temp });
-  
- return messages.length - 1;
-
-}
-function convInsertSystem(content) {
-  if (!currentConvId) currentConvId = dbAddConversation('New Chat');
-
-  const msgId = dbAddMessage(currentConvId, 'system', content, null, null);
-  messages.unshift({ id: msgId, role: 'system', content, model_used: null, temperature_used: null });
-
-  
-
 }
 function convUpdateMessage(index, content) {
   if (index >= 0 && index < messages.length) { messages[index].content = content; if (messages[index].id) dbUpdateMessage(messages[index].id, content); }
@@ -638,7 +611,6 @@ function convMessagesForApi() { return messages.map(m => ({ role: m.role, conten
 // Streaming
 // ════════════════════════════════════════════════════════════════
 
-let abortController = null;
 async function streamResponse(win, tabId, modelId, temperature, extra) {
   const key = getApiKey();
   if (!key) { win.webContents.send('stream:error', tabId, 'API key not configured'); return; }
@@ -1085,9 +1057,24 @@ function registerIPC(win) {
   ipcMain.handle('conv:load', (_, id) => {
     convLoad(id);
     return {
-      messages: messages.filter(m => m.role !== 'system').map((m, i) => ({ ...m, idx: messages.indexOf(m) })),
+      messages: messages.filter(m => m.role !== 'system').map((m) => ({ ...m, idx: messages.indexOf(m) })),
       state: getConversationState(),
     };
+  });
+  ipcMain.handle('conv:list', () => dbGetConversations());
+  ipcMain.handle('conv:delete', (_, id) => { dbDeleteConversation(id); if (currentConvId === id) convNew(); return true; });
+  ipcMain.handle('conv:rename', (_, id, title) => { dbRenameConversation(id, title); return true; });
+  ipcMain.handle('conv:export', (_, id) => {
+    const convs = dbGetConversations(); const conv = convs.find(c => c.id === id);
+    const msgs = dbGetMessages(id);
+    return JSON.stringify({ type: 'or-client-chat', title: conv?.title || 'Export', messages: msgs }, null, 2);
+  });
+  ipcMain.handle('conv:import', async (_, jsonStr) => {
+    const data = JSON.parse(jsonStr);
+    if (data.type !== 'or-client-chat') throw new Error('Invalid format');
+    const cid = dbAddConversation((data.title || 'Imported') + ' (Imported)');
+    for (const m of (data.messages || [])) dbAddMessage(cid, m.role, m.content, m.model_used || null, m.temperature_used || 0.7);
+    return true;
   });
 
   // ── Chat ──
@@ -1121,9 +1108,6 @@ function registerIPC(win) {
     if (!opts?.webSearch && effectiveModel.endsWith(':online')) effectiveModel = effectiveModel.replace(':online', '');
     
     await streamResponse(win, tabId, effectiveModel, temp, {});
-    
-    // Restore previous tab if it changed during await
-    // Actually, we should probably keep currentTabId updated on switchTab
     
     return { conversations: dbGetConversations(), tokenCount: estimateTokens(tabState.messages) };
   });
@@ -1170,87 +1154,6 @@ function registerIPC(win) {
 
     const actualIdx = messages.filter(m => m.role !== 'system').findIndex((_, i) => i === index);
     if (actualIdx !== -1 && actualIdx < messages.length) convPruneFrom(actualIdx);
-    return { messages: messages.filter(m => m.role !== 'system').map((m, i) => ({ ...m, idx: messages.indexOf(m) })), tokenCount: estimateTokens() };
-  });
-
-  ipcMain.handle('conv:list', () => dbGetConversations());
-  ipcMain.handle('conv:new', () => { convNew(); return true; });
-  ipcMain.handle('conv:load', (_, id) => {
-    convLoad(id);
-    if (currentTabId) tabStates[currentTabId] = { currentConvId, messages };
-    return {
-      messages: messages.filter(m => m.role !== 'system').map((m, i) => ({ ...m, idx: messages.indexOf(m) })),
-      state: getConversationState(),
-    };
-  });
-  ipcMain.handle('conv:delete', (_, id) => { dbDeleteConversation(id); if (currentConvId === id) convNew(); return true; });
-  ipcMain.handle('conv:rename', (_, id, title) => { dbRenameConversation(id, title); return true; });
-  ipcMain.handle('conv:export', (_, id) => {
-    const convs = dbGetConversations(); const conv = convs.find(c => c.id === id);
-    const msgs = dbGetMessages(id);
-    return JSON.stringify({ type: 'or-client-chat', title: conv?.title || 'Export', messages: msgs }, null, 2);
-  });
-  ipcMain.handle('conv:import', async (_, jsonStr) => {
-    const data = JSON.parse(jsonStr);
-    if (data.type !== 'or-client-chat') throw new Error('Invalid format');
-    const cid = dbAddConversation((data.title || 'Imported') + ' (Imported)');
-    for (const m of (data.messages || [])) dbAddMessage(cid, m.role, m.content, m.model_used || null, m.temperature_used || 0.7);
-    return true;
-  });
-
-  // ── Chat ──
-  ipcMain.handle('chat:send', async (_, text, modelId, temp, sysPrompt, opts) => {
-    const hasSystem = messages.length > 0 && messages[0].role === 'system';
-    if (hasSystem && sysPrompt) convUpdateMessage(0, sysPrompt);
-    else if (hasSystem && !sysPrompt) { const s = messages[0]; messages.splice(0, 1); if (s.id) dbDeleteMessage(s.id); }
-    else if (!hasSystem && sysPrompt) convInsertSystem(sysPrompt);
-
-    convAddMessage('user', text, null, temp);
-
-    if (currentConvId) {
-      const conv = dbGetConversation(currentConvId);
-      if (conv && conv.title === 'New Chat') {
-        let titleText = text.replace(/<div class="yaog-file-content"[^>]*>[\s\S]*?<\/div>/g, '').trim();
-        if (!titleText) titleText = 'Chat';
-        dbRenameConversation(currentConvId, titleText.length > 50 ? titleText.slice(0, 50) + '…' : titleText);
-      }
-    }
-
-    let effectiveModel = modelId;
-    if (opts?.webSearch && !effectiveModel.endsWith(':online')) effectiveModel += ':online';
-    if (!opts?.webSearch && effectiveModel.endsWith(':online')) effectiveModel = effectiveModel.replace(':online', '');
-    await streamResponse(win, effectiveModel, temp, {});
-    return { conversations: dbGetConversations(), tokenCount: estimateTokens() };
-  });
-
-  ipcMain.handle('chat:stop', () => { if (abortController) abortController.abort(); return true; });
-
-  ipcMain.handle('chat:edit', async (_, index, newContent, modelId, temp, opts) => {
-    convUpdateMessage(index, newContent); convPruneAfter(index);
-    let effectiveModel = modelId;
-    if (opts?.webSearch && !effectiveModel.endsWith(':online')) effectiveModel += ':online';
-    if (!opts?.webSearch && effectiveModel.endsWith(':online')) effectiveModel = effectiveModel.replace(':online', '');
-    await streamResponse(win, effectiveModel, temp, {});
-    return { conversations: dbGetConversations(), tokenCount: estimateTokens() };
-  });
-
-  ipcMain.handle('chat:regenerate', async (_, index, modelId, temp, opts) => {
-    // index is in the filtered (no-system) coordinate system — translate to actual backend array index
-    const actualIdx = messages.filter(m => m.role !== 'system').findIndex((_, i) => i === index);
-    if (actualIdx === -1 || actualIdx >= messages.length) return { conversations: dbGetConversations(), tokenCount: estimateTokens() };
-    if (messages[actualIdx]?.role === 'assistant') convPruneFrom(actualIdx); else convPruneAfter(actualIdx);
-    let effectiveModel = modelId;
-    if (opts?.webSearch && !effectiveModel.endsWith(':online')) effectiveModel += ':online';
-    if (!opts?.webSearch && effectiveModel.endsWith(':online')) effectiveModel = effectiveModel.replace(':online', '');
-    await streamResponse(win, effectiveModel, temp, {});
-    return { conversations: dbGetConversations(), tokenCount: estimateTokens() };
-  });
-
-  ipcMain.handle('chat:deleteMsg', (_, index) => {
-    // index is in the filtered (no-system) coordinate system — translate to actual backend array index
-    const actualIdx = messages.filter(m => m.role !== 'system').findIndex((_, i) => i === index);
-    if (actualIdx !== -1 && actualIdx < messages.length) convPruneFrom(actualIdx);
-  if (currentTabId) tabStates[currentTabId] = { currentConvId, messages };
     return { messages: messages.filter(m => m.role !== 'system').map((m, i) => ({ ...m, idx: messages.indexOf(m) })), tokenCount: estimateTokens() };
   });
 

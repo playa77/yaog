@@ -264,7 +264,7 @@ function AppInner({ conversations, setConversations }: {
       updateTabRef.current(tabId, { isStreaming: false, streamContent: '' })
       if (tabId === activeTabIdRef.current) {
         setIsStreaming(false); setStreamContent(''); streamContentRef.current = ''
-        window.api.chatTokenCount().then(setTokenCount)
+        window.api.chatTokenCount(tabId).then(setTokenCount)
       }
     })
     window.api.onStreamError((tabId: string, msg: string) => {
