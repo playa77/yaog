@@ -626,6 +626,7 @@ async function streamResponse(win, tabId, modelId, temperature, extra) {
   
   const tabAbortController = new AbortController();
   tabState.abortController = tabAbortController;
+  win.webContents.send('stream:start', tabId, tabState.messages.length, normalizedModelId);
 
   const payload = { model: normalizedModelId, messages: tabState.messages.map(m => ({ role: m.role, content: m.content })), temperature, stream: true, ...extra };
   
@@ -648,11 +649,15 @@ async function streamResponse(win, tabId, modelId, temperature, extra) {
       return; 
     }
 
+    if (!result.body) {
+      win.webContents.send('stream:error', tabId, 'API returned an empty response body.');
+      return;
+    }
+
     const reader = result.body.getReader(); 
     const decoder = new TextDecoder(); 
     let buffer = ''; 
     let fullContent = ''; 
-    let firstToken = false;
 
     while (true) {
       const { done, value } = await reader.read(); 
@@ -670,15 +675,16 @@ async function streamResponse(win, tabId, modelId, temperature, extra) {
           const chunk = JSON.parse(data); 
           const content = chunk.choices?.[0]?.delta?.content; 
           if (content) { 
-            if (!firstToken) { 
-              firstToken = true; 
-              win.webContents.send('stream:start', tabId, tabState.messages.length, normalizedModelId); 
-            } 
             fullContent += content; 
             win.webContents.send('stream:token', tabId, content); 
           } 
         } catch {}
       }
+    }
+
+    if (!fullContent.trim()) {
+      win.webContents.send('stream:error', tabId, `Model "${normalizedModelId}" returned no text output.`);
+      return;
     }
 
     // Add assistant message to the specific tab's state and DB
