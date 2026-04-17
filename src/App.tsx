@@ -193,50 +193,11 @@ function AppInner({ conversations, setConversations }: {
     init()
   }, [applyFontSettings, setConversations])
 
-  const renderMessagesRef = useRef(renderMessages)
-  useEffect(() => { renderMessagesRef.current = renderMessages }, [renderMessages])
-
   const activeTabIdRef = useRef(activeTabId)
   useEffect(() => { activeTabIdRef.current = activeTabId }, [activeTabId])
 
-  const refreshMessagesRef = useRef(refreshMessages)
-  useEffect(() => { refreshMessagesRef.current = refreshMessages }, [refreshMessages])
-
   const updateTabRef = useRef(updateTab)
   useEffect(() => { updateTabRef.current = updateTab }, [updateTab])
-
-  const streamListenersRegistered = useRef(false)
-  useEffect(() => {
-    if (streamListenersRegistered.current) return
-    streamListenersRegistered.current = true
-
-    window.api.onStreamStart((tabId: string, _index: number, model: string) => {
-      updateTabRef.current(tabId, { isStreaming: true, streamContent: '', streamModel: model })
-      if (tabId === activeTabIdRef.current) {
-        setIsStreaming(true); setStreamContent(''); setStreamModel(model); streamContentRef.current = ''
-      }
-    })
-    window.api.onStreamToken((tabId: string, text: string) => {
-      if (tabId === activeTabIdRef.current) {
-        streamContentRef.current += text; setStreamContent(streamContentRef.current)
-      }
-      // Optional: update non-active tab state? (throttled)
-    })
-    window.api.onStreamDone(async (tabId: string, _content: string) => {
-      await refreshMessagesRef.current(tabId)
-      updateTabRef.current(tabId, { isStreaming: false, streamContent: '' })
-      if (tabId === activeTabIdRef.current) {
-        setIsStreaming(false); setStreamContent(''); streamContentRef.current = ''
-        window.api.chatTokenCount().then(setTokenCount)
-      }
-    })
-    window.api.onStreamError((tabId: string, msg: string) => {
-      updateTabRef.current(tabId, { isStreaming: false, streamContent: '', error: msg })
-      if (tabId === activeTabIdRef.current) {
-        setIsStreaming(false); setStreamContent(''); streamContentRef.current = ''; setError(msg)
-      }
-    })
-  }, [])
 
   useEffect(() => {
     setTokenCount(0)
@@ -277,6 +238,42 @@ function AppInner({ conversations, setConversations }: {
     updateTab(tabId, { messages: rendered })
     if (tabId === activeTabId) setMessages(rendered)
   }, [tabs, activeTabId, renderMessages, updateTab])
+
+  const refreshMessagesRef = useRef(refreshMessages)
+  useEffect(() => { refreshMessagesRef.current = refreshMessages }, [refreshMessages])
+
+  const streamListenersRegistered = useRef(false)
+  useEffect(() => {
+    if (streamListenersRegistered.current) return
+    streamListenersRegistered.current = true
+
+    window.api.onStreamStart((tabId: string, _index: number, model: string) => {
+      updateTabRef.current(tabId, { isStreaming: true, streamContent: '', streamModel: model })
+      if (tabId === activeTabIdRef.current) {
+        setIsStreaming(true); setStreamContent(''); setStreamModel(model); streamContentRef.current = ''
+      }
+    })
+    window.api.onStreamToken((tabId: string, text: string) => {
+      if (tabId === activeTabIdRef.current) {
+        streamContentRef.current += text; setStreamContent(streamContentRef.current)
+      }
+      // Optional: update non-active tab state? (throttled)
+    })
+    window.api.onStreamDone(async (tabId: string, _content: string) => {
+      await refreshMessagesRef.current(tabId)
+      updateTabRef.current(tabId, { isStreaming: false, streamContent: '' })
+      if (tabId === activeTabIdRef.current) {
+        setIsStreaming(false); setStreamContent(''); streamContentRef.current = ''
+        window.api.chatTokenCount().then(setTokenCount)
+      }
+    })
+    window.api.onStreamError((tabId: string, msg: string) => {
+      updateTabRef.current(tabId, { isStreaming: false, streamContent: '', error: msg })
+      if (tabId === activeTabIdRef.current) {
+        setIsStreaming(false); setStreamContent(''); streamContentRef.current = ''; setError(msg)
+      }
+    })
+  }, [])
 
   useEffect(() => {
     if (activeTabId && activeTab?.conversationId && activeTab.messages.length === 0) {
