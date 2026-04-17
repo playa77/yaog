@@ -79,12 +79,14 @@ export default function ChatView({
         {isStreaming && (
           <div className="mb-2">
             <div className="flex items-center gap-2 mb-2.5 font-sans fs-ui-2xs font-bold uppercase tracking-[1.2px] text-text-muted">
-              {streamModel}
+              {streamModel || 'Assistant'}
             </div>
             {streamContent ? (
               <div className="prose-chat" dangerouslySetInnerHTML={{ __html: streamHtml }} />
             ) : (
-              <div className="text-text-muted italic font-body animate-breathe">Composing…</div>
+              <div className="text-text-muted italic font-body animate-breathe">
+                Thinking… model is working.
+              </div>
             )}
           </div>
         )}
