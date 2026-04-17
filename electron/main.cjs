@@ -171,6 +171,7 @@ const dbDeleteConversation = (id) => db.prepare('DELETE FROM conversations WHERE
 const dbGetMessages = (convId) => db.prepare('SELECT id, role, content, model_used, temperature_used FROM messages WHERE conversation_id = ? ORDER BY timestamp ASC').all(convId);
 const dbAddMessage = (convId, role, content, model, temp) => db.prepare('INSERT INTO messages (conversation_id, role, content, model_used, temperature_used) VALUES (?, ?, ?, ?, ?)').run(convId, role, content, model, temp).lastInsertRowid;
 const dbUpdateMessage = (msgId, content) => db.prepare('UPDATE messages SET content = ? WHERE id = ?').run(content, msgId);
+
 const dbDeleteMessage = (msgId) => db.prepare('DELETE FROM messages WHERE id = ?').run(msgId);
 function loadPromptMeta() {
   try { if (fs.existsSync(PROMPT_META_PATH)) return JSON.parse(fs.readFileSync(PROMPT_META_PATH, 'utf8')); } catch {}
@@ -536,11 +537,45 @@ function migrateNewChatTitles() {
 // Conversation State
 // ════════════════════════════════════════════════════════════════
 
+let currentTabId = null;
+let tabStates = {};
 let currentConvId = null;
 let messages = [];
+function convNew() { 
+  currentConvId = null; 
+  messages = []; 
+  if (currentTabId) tabStates[currentTabId] = { currentConvId: null, messages: [], abortController: null };
+}
+function convLoad(id) { 
+  currentConvId = id; 
+  messages = dbGetMessages(id); 
+  if (currentTabId) tabStates[currentTabId] = { currentConvId, messages, abortController: null };
+}
 
-function convNew() { currentConvId = null; messages = []; }
-function convLoad(id) { currentConvId = id; messages = dbGetMessages(id); }
+function convAddMessage(role, content, model, temp) {
+  if (!currentConvId) {
+    let t = content.replace(/<div class="yaog-file-content"[^>]*>[\s\S]*?<\/div>/g, '').trim();
+    if (!t) t = 'New Chat';
+    currentConvId = dbAddConversation(t.length > 40 ? t.slice(0, 40) + '…' : t);
+    if (currentTabId) tabStates[currentTabId].currentConvId = currentConvId;
+  }
+  const msgId = dbAddMessage(currentConvId, role, content, model, temp);
+  messages.push({ id: msgId, role, content, model_used: model, temperature_used: temp });
+  return messages.length - 1;
+}
+function convInsertSystem(content) {
+  if (!currentConvId) {
+    currentConvId = dbAddConversation('New Chat');
+    if (currentTabId) tabStates[currentTabId].currentConvId = currentConvId;
+  }
+  const msgId = dbAddMessage(currentConvId, 'system', content, null, null);
+  messages.unshift({ id: msgId, role: 'system', content, model_used: null, temperature_used: null });
+}
+function convLoad(id) { 
+  currentConvId = id; 
+  messages = dbGetMessages(id); 
+  
+}
 function getConversationState() {
   const system = messages.find(m => m.role === 'system');
   const lastWithModel = [...messages].reverse().find(m => typeof m.model_used === 'string' && m.model_used.trim().length > 0) || null;
@@ -561,22 +596,42 @@ function convAddMessage(role, content, model, temp) {
   if (!currentConvId) {
     let t = content.replace(/<div class="yaog-file-content"[^>]*>[\s\S]*?<\/div>/g, '').trim();
     if (!t) t = 'New Chat';
+
     currentConvId = dbAddConversation(t.length > 40 ? t.slice(0, 40) + '…' : t);
   }
   const msgId = dbAddMessage(currentConvId, role, content, model, temp);
   messages.push({ id: msgId, role, content, model_used: model, temperature_used: temp });
-  return messages.length - 1;
+  
+ return messages.length - 1;
+
 }
 function convInsertSystem(content) {
   if (!currentConvId) currentConvId = dbAddConversation('New Chat');
+
   const msgId = dbAddMessage(currentConvId, 'system', content, null, null);
   messages.unshift({ id: msgId, role: 'system', content, model_used: null, temperature_used: null });
+
+  
+
 }
 function convUpdateMessage(index, content) {
   if (index >= 0 && index < messages.length) { messages[index].content = content; if (messages[index].id) dbUpdateMessage(messages[index].id, content); }
+
+
+  
 }
-function convPruneAfter(index) { const r = messages.splice(index + 1); for (const m of r) if (m.id) dbDeleteMessage(m.id); }
-function convPruneFrom(index) { const r = messages.splice(index); for (const m of r) if (m.id) dbDeleteMessage(m.id); }
+function convPruneAfter(index) { const r = messages.splice(index + 1); for (const m of r) if (m.id) dbDeleteMessage(m.id); 
+
+  
+}
+  
+  
+function convPruneFrom(index) { const r = messages.splice(index); for (const m of r) if (m.id) dbDeleteMessage(m.id); 
+
+  
+}
+  
+  
 function convMessagesForApi() { return messages.map(m => ({ role: m.role, content: m.content })); }
 
 // ════════════════════════════════════════════════════════════════
@@ -584,39 +639,83 @@ function convMessagesForApi() { return messages.map(m => ({ role: m.role, conten
 // ════════════════════════════════════════════════════════════════
 
 let abortController = null;
-async function streamResponse(win, modelId, temperature, extra) {
+async function streamResponse(win, tabId, modelId, temperature, extra) {
   const key = getApiKey();
-  if (!key) { win.webContents.send('stream:error', 'API key not configured'); return; }
-  abortController = new AbortController();
-  const payload = { model: modelId, messages: convMessagesForApi(), temperature, stream: true, ...extra };
+  if (!key) { win.webContents.send('stream:error', tabId, 'API key not configured'); return; }
+  
+  // Capture current state for this tab
+  const tabState = tabStates[tabId];
+  if (!tabState) { win.webContents.send('stream:error', tabId, 'Invalid tab state'); return; }
+  
+  const tabAbortController = new AbortController();
+  tabState.abortController = tabAbortController;
+
+  const payload = { model: modelId, messages: tabState.messages.map(m => ({ role: m.role, content: m.content })), temperature, stream: true, ...extra };
+  
   try {
-      const result = await fetch('https://openrouter.ai/api/v1/chat/completions', { 
-        method: 'POST', 
-        headers: { 
-          'Authorization': `Bearer ${key}`, 
-          'Content-Type': 'application/json', 
-          'X-Title': 'YaOG',
-          'HTTP-Referer': 'https://github.com/playa77/yaog'
-        }, 
-        body: JSON.stringify(payload), 
-        signal: abortController.signal 
-      });
-    if (!res.ok) { const errText = await res.text().catch(() => ''); win.webContents.send('stream:error', res.status === 429 ? 'Rate limit (429). Try again shortly.' : `API error ${res.status}: ${errText.slice(0, 200)}`); return; }
-    const reader = res.body.getReader(); const decoder = new TextDecoder(); let buffer = ''; let fullContent = ''; let firstToken = false;
+    const result = await fetch('https://openrouter.ai/api/v1/chat/completions', { 
+      method: 'POST', 
+      headers: { 
+        'Authorization': `Bearer ${key}`, 
+        'Content-Type': 'application/json', 
+        'X-Title': 'YaOG',
+        'HTTP-Referer': 'https://github.com/playa77/yaog'
+      }, 
+      body: JSON.stringify(payload), 
+      signal: tabAbortController.signal 
+    });
+
+    if (!result.ok) { 
+      const errText = await result.text().catch(() => ''); 
+      win.webContents.send('stream:error', tabId, result.status === 429 ? 'Rate limit (429). Try again shortly.' : `API error ${result.status}: ${errText.slice(0, 200)}`); 
+      return; 
+    }
+
+    const reader = result.body.getReader(); 
+    const decoder = new TextDecoder(); 
+    let buffer = ''; 
+    let fullContent = ''; 
+    let firstToken = false;
+
     while (true) {
-      const { done, value } = await reader.read(); if (done) break;
-      buffer += decoder.decode(value, { stream: true }); const lines = buffer.split('\n'); buffer = lines.pop() || '';
+      const { done, value } = await reader.read(); 
+      if (done) break;
+      
+      buffer += decoder.decode(value, { stream: true }); 
+      const lines = buffer.split('\n'); 
+      buffer = lines.pop() || '';
+      
       for (const line of lines) {
-        if (!line.startsWith('data: ')) continue; const data = line.slice(6).trim(); if (data === '[DONE]') break;
-        try { const chunk = JSON.parse(data); const content = chunk.choices?.[0]?.delta?.content; if (content) { if (!firstToken) { firstToken = true; win.webContents.send('stream:start', messages.length, modelId); } fullContent += content; win.webContents.send('stream:token', content); } } catch {}
+        if (!line.startsWith('data: ')) continue; 
+        const data = line.slice(6).trim(); 
+        if (data === '[DONE]') break;
+        try { 
+          const chunk = JSON.parse(data); 
+          const content = chunk.choices?.[0]?.delta?.content; 
+          if (content) { 
+            if (!firstToken) { 
+              firstToken = true; 
+              win.webContents.send('stream:start', tabId, tabState.messages.length, modelId); 
+            } 
+            fullContent += content; 
+            win.webContents.send('stream:token', tabId, content); 
+          } 
+        } catch {}
       }
     }
-    convAddMessage('assistant', fullContent, modelId, temperature);
-    win.webContents.send('stream:done', fullContent);
+
+    // Add assistant message to the specific tab's state and DB
+    const cid = tabState.currentConvId;
+    const msgId = dbAddMessage(cid, 'assistant', fullContent, modelId, temperature);
+    tabState.messages.push({ id: msgId, role: 'assistant', content: fullContent, model_used: modelId, temperature_used: temperature });
+    
+    win.webContents.send('stream:done', tabId, fullContent);
   } catch (err) {
-    if (err.name === 'AbortError') win.webContents.send('stream:done', '');
-    else win.webContents.send('stream:error', err.message);
-  } finally { abortController = null; }
+    if (err.name === 'AbortError') win.webContents.send('stream:done', tabId, '');
+    else win.webContents.send('stream:error', tabId, err.message);
+  } finally { 
+    if (tabState.abortController === tabAbortController) tabState.abortController = null;
+  }
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -969,12 +1068,118 @@ function processFile(filePath) {
 function registerIPC(win) {
 
   // ── Conversations ──
-  ipcMain.handle('conv:list', () => dbGetConversations());
+  ipcMain.handle("tab:close", (_, tabId) => {
+    delete tabStates[tabId];
+    if (currentTabId === tabId) currentTabId = null;
+    return true;
+  });
+  ipcMain.handle("tab:switch", (_, tabId) => {
+    currentTabId = tabId;
+    if (!tabStates[tabId]) tabStates[tabId] = { currentConvId: null, messages: [], abortController: null };
+    currentConvId = tabStates[tabId].currentConvId; 
+    messages = tabStates[tabId].messages;
+    return true;
+  });
+
   ipcMain.handle('conv:new', () => { convNew(); return true; });
   ipcMain.handle('conv:load', (_, id) => {
     convLoad(id);
     return {
-      messages: messages.filter(m => m.role !== 'system').map((m) => ({ ...m, idx: messages.indexOf(m) })),
+      messages: messages.filter(m => m.role !== 'system').map((m, i) => ({ ...m, idx: messages.indexOf(m) })),
+      state: getConversationState(),
+    };
+  });
+
+  // ── Chat ──
+  ipcMain.handle('chat:send', async (_, tabId, text, modelId, temp, sysPrompt, opts) => {
+    const tabState = tabStates[tabId];
+    if (!tabState) throw new Error('Invalid tab state');
+    
+    // Switch state to the targeted tab for internal conv* functions if they still rely on globals
+    // Actually, it's better to refactor them or temporarily switch
+    const prevTabId = currentTabId; currentTabId = tabId;
+    currentConvId = tabStates[tabId].currentConvId; messages = tabStates[tabId].messages;
+
+    const hasSystem = messages.length > 0 && messages[0].role === 'system';
+    if (hasSystem && sysPrompt) convUpdateMessage(0, sysPrompt);
+    else if (hasSystem && !sysPrompt) { const s = messages[0]; messages.splice(0, 1); if (s.id) dbDeleteMessage(s.id); }
+    else if (!hasSystem && sysPrompt) convInsertSystem(sysPrompt);
+
+    convAddMessage('user', text, null, temp);
+
+    if (currentConvId) {
+      const conv = dbGetConversation(currentConvId);
+      if (conv && conv.title === 'New Chat') {
+        let titleText = text.replace(/<div class="yaog-file-content"[^>]*>[\s\S]*?<\/div>/g, '').trim();
+        if (!titleText) titleText = 'Chat';
+        dbRenameConversation(currentConvId, titleText.length > 50 ? titleText.slice(0, 50) + '…' : titleText);
+      }
+    }
+
+    let effectiveModel = modelId;
+    if (opts?.webSearch && !effectiveModel.endsWith(':online')) effectiveModel += ':online';
+    if (!opts?.webSearch && effectiveModel.endsWith(':online')) effectiveModel = effectiveModel.replace(':online', '');
+    
+    await streamResponse(win, tabId, effectiveModel, temp, {});
+    
+    // Restore previous tab if it changed during await
+    // Actually, we should probably keep currentTabId updated on switchTab
+    
+    return { conversations: dbGetConversations(), tokenCount: estimateTokens(tabState.messages) };
+  });
+
+  ipcMain.handle('chat:stop', (_, tabId) => { 
+    if (tabId && tabStates[tabId]?.abortController) {
+      tabStates[tabId].abortController.abort();
+    }
+    return true; 
+  });
+
+  ipcMain.handle('chat:edit', async (_, tabId, index, newContent, modelId, temp, opts) => {
+    // Sync globals
+    currentTabId = tabId;
+    currentConvId = tabStates[tabId].currentConvId; messages = tabStates[tabId].messages;
+
+    convUpdateMessage(index, newContent); convPruneAfter(index);
+    let effectiveModel = modelId;
+    if (opts?.webSearch && !effectiveModel.endsWith(':online')) effectiveModel += ':online';
+    if (!opts?.webSearch && effectiveModel.endsWith(':online')) effectiveModel = effectiveModel.replace(':online', '');
+    await streamResponse(win, tabId, effectiveModel, temp, {});
+    return { conversations: dbGetConversations(), tokenCount: estimateTokens(messages) };
+  });
+
+  ipcMain.handle('chat:regenerate', async (_, tabId, index, modelId, temp, opts) => {
+    // Sync globals
+    currentTabId = tabId;
+    currentConvId = tabStates[tabId].currentConvId; messages = tabStates[tabId].messages;
+
+    const actualIdx = messages.filter(m => m.role !== 'system').findIndex((_, i) => i === index);
+    if (actualIdx === -1 || actualIdx >= messages.length) return { conversations: dbGetConversations(), tokenCount: estimateTokens(messages) };
+    if (messages[actualIdx]?.role === 'assistant') convPruneFrom(actualIdx); else convPruneAfter(actualIdx);
+    let effectiveModel = modelId;
+    if (opts?.webSearch && !effectiveModel.endsWith(':online')) effectiveModel += ':online';
+    if (!opts?.webSearch && effectiveModel.endsWith(':online')) effectiveModel = effectiveModel.replace(':online', '');
+    await streamResponse(win, tabId, effectiveModel, temp, {});
+    return { conversations: dbGetConversations(), tokenCount: estimateTokens(messages) };
+  });
+
+  ipcMain.handle('chat:deleteMsg', (_, tabId, index) => {
+    // Sync globals
+    currentTabId = tabId;
+    currentConvId = tabStates[tabId].currentConvId; messages = tabStates[tabId].messages;
+
+    const actualIdx = messages.filter(m => m.role !== 'system').findIndex((_, i) => i === index);
+    if (actualIdx !== -1 && actualIdx < messages.length) convPruneFrom(actualIdx);
+    return { messages: messages.filter(m => m.role !== 'system').map((m, i) => ({ ...m, idx: messages.indexOf(m) })), tokenCount: estimateTokens() };
+  });
+
+  ipcMain.handle('conv:list', () => dbGetConversations());
+  ipcMain.handle('conv:new', () => { convNew(); return true; });
+  ipcMain.handle('conv:load', (_, id) => {
+    convLoad(id);
+    if (currentTabId) tabStates[currentTabId] = { currentConvId, messages };
+    return {
+      messages: messages.filter(m => m.role !== 'system').map((m, i) => ({ ...m, idx: messages.indexOf(m) })),
       state: getConversationState(),
     };
   });
@@ -1045,23 +1250,31 @@ function registerIPC(win) {
     // index is in the filtered (no-system) coordinate system — translate to actual backend array index
     const actualIdx = messages.filter(m => m.role !== 'system').findIndex((_, i) => i === index);
     if (actualIdx !== -1 && actualIdx < messages.length) convPruneFrom(actualIdx);
-    return { messages: messages.filter(m => m.role !== 'system').map((m) => ({ ...m, idx: messages.indexOf(m) })), tokenCount: estimateTokens() };
+  if (currentTabId) tabStates[currentTabId] = { currentConvId, messages };
+    return { messages: messages.filter(m => m.role !== 'system').map((m, i) => ({ ...m, idx: messages.indexOf(m) })), tokenCount: estimateTokens() };
   });
 
-  ipcMain.handle('chat:getMessages', () => messages
-    .filter(m => m.role !== 'system')
-    .map((m, i) => ({ ...m, idx: messages.indexOf(m) }))
-  );
+  ipcMain.handle('chat:getMessages', (_, tabId) => {
+    if (tabId && tabStates[tabId]) return tabStates[tabId].messages.filter(m => m.role !== 'system').map((m) => ({ ...m, idx: tabStates[tabId].messages.indexOf(m) }));
+    return messages.filter(m => m.role !== 'system').map((m) => ({ ...m, idx: messages.indexOf(m) }));
+  });
 
   // Return ALL messages including file-content blocks (for full context copy)
-  ipcMain.handle('chat:getFullMessages', () => messages.map((m) => ({ ...m, idx: messages.indexOf(m) })));
+  ipcMain.handle('chat:getFullMessages', (_, tabId) => {
+    if (tabId && tabStates[tabId]) return tabStates[tabId].messages.map((m) => ({ ...m, idx: tabStates[tabId].messages.indexOf(m) }));
+    return messages.map((m) => ({ ...m, idx: messages.indexOf(m) }));
+  });
 
   // ── Token counting ──
-  function estimateTokens() { let c = 0; for (const m of messages) { c += 4 + Math.ceil((m.content || '').length / 4) + Math.ceil((m.role || '').length / 4); } return c + 2; }
-  ipcMain.handle('chat:tokenCount', () => estimateTokens());
+  function estimateTokens(msgs) { let c = 0; for (const m of msgs) { c += 4 + Math.ceil((m.content || '').length / 4) + Math.ceil((m.role || '').length / 4); } return c + 2; }
+  ipcMain.handle('chat:tokenCount', (_, tabId) => {
+    const msgs = (tabId && tabStates[tabId]) ? tabStates[tabId].messages : messages;
+    return estimateTokens(msgs);
+  });
   // Comprehensive count: system prompt (in messages[]) + history + current input
-  ipcMain.handle('chat:tokenCountFull', (_, inputText) => {
-    let c = estimateTokens();
+  ipcMain.handle('chat:tokenCountFull', (_, tabId, inputText) => {
+    const msgs = (tabId && tabStates[tabId]) ? tabStates[tabId].messages : messages;
+    let c = estimateTokens(msgs);
     if (inputText) c += 4 + Math.ceil(inputText.length / 4);
     return c;
   });

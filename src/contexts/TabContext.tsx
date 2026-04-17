@@ -42,43 +42,45 @@ export const TabProvider: React.FC<{ children: React.ReactNode, conversations: C
   const saveTabToBackend = useCallback(async (tabId: string) => {
     const tab = tabs.find(t => t.id === tabId);
     if (tab && tab.conversationId !== null) {
-      await window.api.convLoad(tab.conversationId);
+      await window.api.tabSwitch(tabId);
     }
   }, [tabs]);
 
-  const openTab = useCallback((options?: { conversationId?: number; title?: string }) => {
+  const openTab = useCallback(async (options?: { conversationId?: number; title?: string }) => {
     const id = `tab-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
     const newTab = createDefaultTab(id, options?.conversationId, options?.title);
     setTabs(prev => [...prev, newTab]);
-    setActiveTabId(id);
+    await window.api.tabSwitch(id); setActiveTabId(id);
     return id;
   }, []);
 
-  const closeTab = useCallback((tabId: string) => {
+  const closeTab = useCallback(async (tabId: string) => {
+    await window.api.tabClose(tabId);
+    
+    let nextTabId: string | null = null;
     setTabs(prev => {
       const index = prev.findIndex(t => t.id === tabId);
       if (index === -1) return prev;
-
       const newTabs = prev.filter(t => t.id !== tabId);
-      
-      if (tabId === activeTabId) {
-        if (newTabs.length > 0) {
-          const nextTab = newTabs[Math.min(index, newTabs.length - 1)];
-          setActiveTabId(nextTab.id);
-        } else {
-          setActiveTabId('');
-        }
+      if (tabId === activeTabId && newTabs.length > 0) {
+        nextTabId = newTabs[Math.min(index, newTabs.length - 1)].id;
       }
-      
       return newTabs;
     });
+
+    if (nextTabId) {
+      await window.api.tabSwitch(nextTabId);
+      setActiveTabId(nextTabId);
+    } else if (tabId === activeTabId) {
+      setActiveTabId('');
+    }
   }, [activeTabId]);
 
   const switchTab = useCallback(async (tabId: string) => {
     if (activeTabId) {
       await saveTabToBackend(activeTabId);
     }
-    setActiveTabId(tabId);
+    await window.api.tabSwitch(tabId); setActiveTabId(tabId);
   }, [activeTabId, saveTabToBackend]);
 
   const updateTab = useCallback((tabId: string, updates: Partial<TabState>) => {
@@ -117,7 +119,7 @@ export const TabProvider: React.FC<{ children: React.ReactNode, conversations: C
     };
 
     setTabs(prev => [...prev, newTab]);
-    setActiveTabId(id);
+    await window.api.tabSwitch(id); setActiveTabId(id);
     return id;
   }, [tabs, conversations, switchTab]);
 
@@ -134,6 +136,28 @@ export const TabProvider: React.FC<{ children: React.ReactNode, conversations: C
     setTabs(prev => prev.map(t => t.conversationId === conversationId ? { ...t, title, fullTitle: title } : t));
   }, []);
 
+  const loadConversationIntoTab = useCallback(async (conversationId: number, tabId: string) => {
+    const loaded: LoadedConversation = await window.api.convLoad(conversationId);
+    const conversation = conversations.find(c => c.id === conversationId);
+    const title = conversation?.title || `Conversation ${conversationId}`;
+    
+    const updates: Partial<TabState> = {
+      conversationId,
+      title,
+      fullTitle: title,
+      messages: [], // Rendered in App.tsx
+      selectedModel: loaded.state.modelId || '',
+      temperature: loaded.state.temperature ?? 1.0,
+      selectedPrompt: loaded.state.systemPrompt,
+      useWebSearch: loaded.state.webSearch,
+      isNew: false,
+    };
+
+    updateTab(tabId, updates);
+    await window.api.tabSwitch(tabId); setActiveTabId(tabId);
+    return tabId;
+  }, [conversations, updateTab]);
+
   const value = useMemo(() => ({
     tabs,
     activeTabId,
@@ -145,6 +169,7 @@ export const TabProvider: React.FC<{ children: React.ReactNode, conversations: C
     reorderTabs,
     saveTabToBackend,
     loadConversationIntoNewTab,
+    loadConversationIntoTab,
     findTabByConversationId,
     getTabIndex,
     updateTabsForConversation,
@@ -159,6 +184,7 @@ export const TabProvider: React.FC<{ children: React.ReactNode, conversations: C
     reorderTabs, 
     saveTabToBackend, 
     loadConversationIntoNewTab, 
+    loadConversationIntoTab,
     findTabByConversationId, 
     getTabIndex,
     updateTabsForConversation,

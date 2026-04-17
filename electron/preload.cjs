@@ -10,17 +10,19 @@ contextBridge.exposeInMainWorld('api', {
   convRename:  (id, title)     => ipcRenderer.invoke('conv:rename', id, title),
   convExport:  (id)            => ipcRenderer.invoke('conv:export', id),
   convImport:  (json)          => ipcRenderer.invoke('conv:import', json),
+  tabSwitch:  (tabId)         => ipcRenderer.invoke("tab:switch", tabId),
+  tabClose:   (tabId)         => ipcRenderer.invoke("tab:close", tabId),
 
   // Chat
-  chatSend:         (text, modelId, temp, sysPrompt, opts) => ipcRenderer.invoke('chat:send', text, modelId, temp, sysPrompt, opts),
-  chatStop:         ()                                      => ipcRenderer.invoke('chat:stop'),
-  chatEdit:         (index, content, modelId, temp, opts)   => ipcRenderer.invoke('chat:edit', index, content, modelId, temp, opts),
-  chatRegenerate:   (index, modelId, temp, opts)            => ipcRenderer.invoke('chat:regenerate', index, modelId, temp, opts),
-  chatDeleteMsg:    (index)                                 => ipcRenderer.invoke('chat:deleteMsg', index),
-  chatGetMessages:  ()                                      => ipcRenderer.invoke('chat:getMessages'),
-  chatGetFullMessages: ()                                   => ipcRenderer.invoke('chat:getFullMessages'),
-  chatTokenCount:   ()                                      => ipcRenderer.invoke('chat:tokenCount'),
-  chatTokenCountFull: (text)                          => ipcRenderer.invoke('chat:tokenCountFull', text),
+  chatSend:         (tabId, text, modelId, temp, sysPrompt, opts) => ipcRenderer.invoke('chat:send', tabId, text, modelId, temp, sysPrompt, opts),
+  chatStop:         (tabId)                                      => ipcRenderer.invoke('chat:stop', tabId),
+  chatEdit:         (tabId, index, content, modelId, temp, opts)   => ipcRenderer.invoke('chat:edit', tabId, index, content, modelId, temp, opts),
+  chatRegenerate:   (tabId, index, modelId, temp, opts)            => ipcRenderer.invoke('chat:regenerate', tabId, index, modelId, temp, opts),
+  chatDeleteMsg:    (tabId, index)                                 => ipcRenderer.invoke('chat:deleteMsg', tabId, index),
+  chatGetMessages:  (tabId)                                      => ipcRenderer.invoke('chat:getMessages', tabId),
+  chatGetFullMessages: (tabId)                                   => ipcRenderer.invoke('chat:getFullMessages', tabId),
+  chatTokenCount:   (tabId)                                      => ipcRenderer.invoke('chat:tokenCount', tabId),
+  chatTokenCountFull: (tabId, text)                          => ipcRenderer.invoke('chat:tokenCountFull', tabId, text),
 
   // Models
   modelsList:    ()                    => ipcRenderer.invoke('models:list'),
@@ -50,8 +52,8 @@ contextBridge.exposeInMainWorld('api', {
   dialogImportFile: ()                 => ipcRenderer.invoke('dialog:importFile'),
 
   // Stream events (main → renderer)
-  onStreamStart: (cb) => { ipcRenderer.on('stream:start', (_, idx, model) => cb(idx, model)); },
-  onStreamToken: (cb) => { ipcRenderer.on('stream:token', (_, text) => cb(text)); },
-  onStreamDone:  (cb) => { ipcRenderer.on('stream:done',  (_, content) => cb(content)); },
-  onStreamError: (cb) => { ipcRenderer.on('stream:error', (_, msg) => cb(msg)); },
+  onStreamStart: (cb) => { ipcRenderer.on('stream:start', (_, tabId, idx, model) => cb(tabId, idx, model)); },
+  onStreamToken: (cb) => { ipcRenderer.on('stream:token', (_, tabId, text) => cb(tabId, text)); },
+  onStreamDone:  (cb) => { ipcRenderer.on('stream:done',  (_, tabId, content) => cb(tabId, content)); },
+  onStreamError: (cb) => { ipcRenderer.on('stream:error', (_, tabId, msg) => cb(tabId, msg)); },
 });

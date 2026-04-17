@@ -88,6 +88,7 @@ export interface TabContextType {
   reorderTabs: (fromIndex: number, toIndex: number) => void;
   saveTabToBackend: (tabId: string) => Promise<void>;
   loadConversationIntoNewTab: (conversationId: number) => Promise<string>;
+  loadConversationIntoTab: (conversationId: number, tabId: string) => Promise<string>;
   findTabByConversationId: (conversationId: number) => string | null;
   getTabIndex: (tabId: string) => number;
   updateTabsForConversation: (conversationId: number, title: string) => void;
@@ -116,6 +117,8 @@ declare global {
       convRename: (id: number, title: string) => Promise<boolean>;
       convExport: (id: number) => Promise<string>;
       convImport: (json: string) => Promise<boolean>;
+      tabSwitch: (tabId: string | null) => Promise<boolean>;
+      tabClose: (tabId: string) => Promise<boolean>;
 
       chatSend: (text: string, modelId: string, temp: number, sysPrompt: string | null, opts: ChatOpts) => Promise<{ conversations: Conversation[]; tokenCount: number }>;
       chatStop: () => Promise<boolean>;

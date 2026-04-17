@@ -35,6 +35,7 @@ export default function InputBar({
     if (!text.trim() && stagedFiles.length === 0) return
     onSend(text)
     setText('')
+    onInputChange('')
   }
 
   const handleKeyDown = (e: KeyboardEvent) => {

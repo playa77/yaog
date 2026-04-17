@@ -80,7 +80,7 @@ function AppInner({ conversations, setConversations }: {
   conversations: Conversation[], 
   setConversations: React.Dispatch<React.SetStateAction<Conversation[]>> 
 }) {
-  const { tabs, activeTabId, activeTab, openTab, closeTab, updateTab, loadConversationIntoNewTab, saveTabToBackend, updateTabsForConversation } = useTabContext()
+  const { tabs, activeTabId, activeTab, openTab, closeTab, updateTab, loadConversationIntoNewTab, loadConversationIntoTab, saveTabToBackend, updateTabsForConversation, findTabByConversationId, switchTab } = useTabContext()
 
   // ── State synced with Active Tab ──
   const [currentConvId, setCurrentConvId] = useState<number | null>(null)
@@ -99,16 +99,12 @@ function AppInner({ conversations, setConversations }: {
   // ── Tab init ──
   const initRef = useRef(false)
   useEffect(() => {
-    // Prevent double-initialization in StrictMode or if called twice
     if (initRef.current) return
     initRef.current = true
-
-    if (tabs.length === 0) {
-      openTab()
-    }
+    if (tabs.length === 0) openTab()
   }, [tabs.length, openTab])
 
-  // Sync state FROM activeTab (only on tab switch)
+  // Sync state FROM activeTab
   const lastTabId = useRef<string | null>(null)
   useEffect(() => {
     if (!activeTab || activeTabId === lastTabId.current) return
@@ -128,24 +124,14 @@ function AppInner({ conversations, setConversations }: {
     setError(activeTab.error)
   }, [activeTabId, activeTab])
 
-  // Sync state TO activeTab (for things that change locally and need to be preserved)
+  // Sync state TO activeTab
   useEffect(() => {
     if (!activeTabId) return
-    // Debounce or only update if truly necessary to avoid loops
     const timer = setTimeout(() => {
       updateTab(activeTabId, {
-        messages,
-        selectedModel,
-        temperature,
-        selectedPrompt,
-        useWebSearch,
-        isStreaming,
-        streamContent,
-        streamModel,
-        pendingInput,
-        stagedFiles,
-        error,
-        conversationId: currentConvId
+        messages, selectedModel, temperature, selectedPrompt,
+        useWebSearch, isStreaming, streamContent, streamModel,
+        pendingInput, stagedFiles, error, conversationId: currentConvId
       })
     }, 100)
     return () => clearTimeout(timer)
@@ -166,13 +152,12 @@ function AppInner({ conversations, setConversations }: {
   const [apiKeySet, setApiKeySet] = useState(false)
   const [fontSettings, setFontSettings] = useState({
     chat_font_size: 16.5, chat_font_family: 'Literata',
-    ui_font_size: 13, ui_font_family: 'DM Sans',
+    ui_font_size: 13, ui_font_family: 'Inter',
     mono_font_family: 'JetBrains Mono', mono_font_size: 14,
   })
 
   const streamContentRef = useRef('')
 
-  // ── Apply font settings as CSS custom properties ──
   const applyFontSettings = useCallback((s: typeof fontSettings) => {
     const root = document.documentElement
     root.style.setProperty('--font-chat', `'${s.chat_font_family}', Georgia, serif`)
@@ -191,7 +176,6 @@ function AppInner({ conversations, setConversations }: {
     }
   }, [])
 
-  // ── Init ──
   useEffect(() => {
     async function init() {
       const [convs, mdls, prms, settings] = await Promise.all([
@@ -209,33 +193,63 @@ function AppInner({ conversations, setConversations }: {
     init()
   }, [applyFontSettings, setConversations])
 
-  // ── Stream events ──
-  useEffect(() => {
-    window.api.onStreamStart((_index: number, model: string) => {
-      setIsStreaming(true); setStreamContent(''); setStreamModel(model); streamContentRef.current = ''
-    })
-    window.api.onStreamToken((text: string) => { streamContentRef.current += text; setStreamContent(streamContentRef.current) })
-    window.api.onStreamDone(async () => {
-      setIsStreaming(false); setStreamContent(''); streamContentRef.current = ''
-      const msgs = await window.api.chatGetMessages(); setMessages(renderMessages(msgs))
-      setTokenCount(await window.api.chatTokenCount())
-    })
-    window.api.onStreamError((msg: string) => { setIsStreaming(false); setStreamContent(''); streamContentRef.current = ''; setError(msg) })
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  const renderMessagesRef = useRef(renderMessages)
+  useEffect(() => { renderMessagesRef.current = renderMessages }, [renderMessages])
 
-  // ── Live token count: immediate on system-prompt change ──
-  useEffect(() => {
-    setTokenCount(window.api.chatTokenCountFull(''))
-  }, [selectedPrompt])
+  const activeTabIdRef = useRef(activeTabId)
+  useEffect(() => { activeTabIdRef.current = activeTabId }, [activeTabId])
 
-  // ── Live token count: debounced ~5s as user types ──
+  const refreshMessagesRef = useRef(refreshMessages)
+  useEffect(() => { refreshMessagesRef.current = refreshMessages }, [refreshMessages])
+
+  const updateTabRef = useRef(updateTab)
+  useEffect(() => { updateTabRef.current = updateTab }, [updateTab])
+
+  const streamListenersRegistered = useRef(false)
+  useEffect(() => {
+    if (streamListenersRegistered.current) return
+    streamListenersRegistered.current = true
+
+    window.api.onStreamStart((tabId: string, _index: number, model: string) => {
+      updateTabRef.current(tabId, { isStreaming: true, streamContent: '', streamModel: model })
+      if (tabId === activeTabIdRef.current) {
+        setIsStreaming(true); setStreamContent(''); setStreamModel(model); streamContentRef.current = ''
+      }
+    })
+    window.api.onStreamToken((tabId: string, text: string) => {
+      if (tabId === activeTabIdRef.current) {
+        streamContentRef.current += text; setStreamContent(streamContentRef.current)
+      }
+      // Optional: update non-active tab state? (throttled)
+    })
+    window.api.onStreamDone(async (tabId: string, _content: string) => {
+      await refreshMessagesRef.current(tabId)
+      updateTabRef.current(tabId, { isStreaming: false, streamContent: '' })
+      if (tabId === activeTabIdRef.current) {
+        setIsStreaming(false); setStreamContent(''); streamContentRef.current = ''
+        window.api.chatTokenCount().then(setTokenCount)
+      }
+    })
+    window.api.onStreamError((tabId: string, msg: string) => {
+      updateTabRef.current(tabId, { isStreaming: false, streamContent: '', error: msg })
+      if (tabId === activeTabIdRef.current) {
+        setIsStreaming(false); setStreamContent(''); streamContentRef.current = ''; setError(msg)
+      }
+    })
+  }, [])
+
+  useEffect(() => {
+    setTokenCount(0)
+    window.api.chatTokenCountFull(activeTabId, '').then(setTokenCount)
+  }, [selectedPrompt, activeTabId])
+
   useEffect(() => {
     const timer = setTimeout(async () => {
-      const count = await window.api.chatTokenCountFull(pendingInput)
+      const count = await window.api.chatTokenCountFull(activeTabId, pendingInput)
       setTokenCount(count)
     }, 5000)
     return () => clearTimeout(timer)
-  }, [pendingInput])
+  }, [pendingInput, activeTabId])
 
   // ── Helpers ──
   const renderMessages = useCallback((msgs: (Message & { idx?: number })[]): DisplayMessage[] => {
@@ -255,6 +269,20 @@ function AppInner({ conversations, setConversations }: {
     })
   }, [useMarkdown])
 
+  const refreshMessages = useCallback(async (tabId: string) => {
+    const tab = tabs.find(t => t.id === tabId)
+    if (!tab || !tab.conversationId) return
+    const msgs = await window.api.chatGetMessages(tabId)
+    const rendered = renderMessages(msgs)
+    updateTab(tabId, { messages: rendered })
+    if (tabId === activeTabId) setMessages(rendered)
+  }, [tabs, activeTabId, renderMessages, updateTab])
+
+  useEffect(() => {
+    if (activeTabId && activeTab?.conversationId && activeTab.messages.length === 0) {
+      refreshMessages(activeTabId)
+    }
+  }, [activeTabId, activeTab?.conversationId])
 
   const chatOpts = useCallback((): ChatOpts => ({
     webSearch: useWebSearch,
@@ -264,8 +292,17 @@ function AppInner({ conversations, setConversations }: {
 
   // ── Actions ──
   const loadConversation = useCallback(async (id: number) => {
-    await loadConversationIntoNewTab(id)
-  }, [loadConversationIntoNewTab])
+    const existingTabId = findTabByConversationId(id)
+    if (existingTabId) {
+      await switchTab(existingTabId)
+      return
+    }
+    if (activeTab && activeTab.messages.length === 0 && !activeTab.conversationId && !activeTab.isStreaming) {
+      await loadConversationIntoTab(id, activeTabId)
+    } else {
+      await loadConversationIntoNewTab(id)
+    }
+  }, [activeTab, activeTabId, findTabByConversationId, loadConversationIntoTab, loadConversationIntoNewTab, switchTab])
 
   const newChat = useCallback(async () => {
     await window.api.convNew(); openTab()
@@ -281,14 +318,13 @@ function AppInner({ conversations, setConversations }: {
     setStagedFiles([]); setError(null); setPendingInput('')
     const userHtml = useMarkdown ? renderMarkdown(text) : text.replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>')
     setMessages(prev => [...prev, {
-      idx: -1,  // placeholder — replaced on next renderMessages call
+      idx: -1,
       role: 'user' as const, html: badges + userHtml, raw: text, fullRaw: fullText, model: '',
     }])
-    const result = await window.api.chatSend(fullText, selectedModel, temperature, selectedPrompt, chatOpts())
+    const result = await window.api.chatSend(activeTabId, fullText, selectedModel, temperature, selectedPrompt, chatOpts())
     if (result?.conversations) { 
       setConversations(result.conversations)
       if (!currentConvId && result.conversations.length > 0) {
-        // Find the newly created conversation ID
         const newConv = result.conversations[0]
         setCurrentConvId(newConv.id)
         updateTab(activeTabId, { title: newConv.title, fullTitle: newConv.title, conversationId: newConv.id })
@@ -296,41 +332,37 @@ function AppInner({ conversations, setConversations }: {
     }
   }, [activeTabId, saveTabToBackend, isStreaming, stagedFiles, selectedModel, temperature, selectedPrompt, chatOpts, useMarkdown, currentConvId, setConversations, updateTab])
 
-  const stopGeneration = useCallback(async () => { await window.api.chatStop() }, [])
+  const stopGeneration = useCallback(async () => { await window.api.chatStop(activeTabId) }, [activeTabId])
 
   const editMessage = useCallback(async (index: number, content: string) => {
     if (activeTabId) await saveTabToBackend(activeTabId)
     setError(null)
-    const result = await window.api.chatEdit(index, content, selectedModel, temperature, chatOpts())
+    const result = await window.api.chatEdit(activeTabId, index, content, selectedModel, temperature, chatOpts())
     if (result?.conversations) setConversations(result.conversations)
-    setMessages(renderMessages(await window.api.chatGetMessages()))
+    setMessages(renderMessages(await window.api.chatGetMessages(activeTabId)))
   }, [activeTabId, saveTabToBackend, selectedModel, temperature, chatOpts, renderMessages, setConversations])
 
   const regenerateMessage = useCallback(async (index: number) => {
     if (activeTabId) await saveTabToBackend(activeTabId)
     setError(null)
-    const result = await window.api.chatRegenerate(index, selectedModel, temperature, chatOpts())
+    const result = await window.api.chatRegenerate(activeTabId, index, selectedModel, temperature, chatOpts())
     if (result?.conversations) setConversations(result.conversations)
-    setMessages(renderMessages(await window.api.chatGetMessages()))
+    setMessages(renderMessages(await window.api.chatGetMessages(activeTabId)))
   }, [activeTabId, saveTabToBackend, selectedModel, temperature, chatOpts, renderMessages, setConversations])
 
   const deleteMessage = useCallback(async (index: number) => {
     if (activeTabId) await saveTabToBackend(activeTabId)
-    const result = await window.api.chatDeleteMsg(index)
+    const result = await window.api.chatDeleteMsg(activeTabId, index)
     if (result) { setMessages(renderMessages(result.messages)); setTokenCount(result.tokenCount) }
   }, [activeTabId, saveTabToBackend, renderMessages])
 
   const deleteConversation = useCallback(async (id: number) => {
     await window.api.convDelete(id); setConversations(prev => prev.filter(c => c.id !== id))
-    // Also close any tabs with this conversation
-    tabs.filter(t => t.conversationId === id).forEach(t => {
-      closeTab(t.id)
-    })
+    tabs.filter(t => t.conversationId === id).forEach(t => closeTab(t.id))
   }, [setConversations, tabs, closeTab])
 
   const renameConversation = useCallback(async (id: number, title: string) => {
     await window.api.convRename(id, title); setConversations(prev => prev.map(c => c.id === id ? { ...c, title } : c))
-    // Update tabs with this conversation
     updateTabsForConversation(id, title)
   }, [setConversations, updateTabsForConversation])
 
@@ -341,48 +373,35 @@ function AppInner({ conversations, setConversations }: {
 
   const removeStagedFile = useCallback((name: string) => { setStagedFiles(prev => prev.filter(f => f.name !== name)) }, [])
 
-  // ── Conversation-level copy ──
   const copyConversation = useCallback(async (mode: 'text' | 'markdown' | 'full') => {
     if (activeTabId) await saveTabToBackend(activeTabId)
-    // For 'full' mode, get messages WITH file content blocks from backend
-    const msgs = mode === 'full'
-      ? await window.api.chatGetFullMessages()
-      : await window.api.chatGetMessages()
-
+    const msgs = mode === 'full' ? await window.api.chatGetFullMessages(activeTabId) : await window.api.chatGetMessages(activeTabId)
     const parts: string[] = []
     for (const m of msgs) {
       if (m.role === 'system') { parts.push(`[System Prompt]\n${m.content}`); continue }
       const label = m.role === 'user' ? 'You' : (m.model_used || 'AI')
-
-      if (mode === 'full') {
-        // Include everything as-is
-        parts.push(`[${label}]\n${m.content}`)
-      } else if (mode === 'text') {
-        // Strip file blocks AND markdown
+      if (mode === 'full') parts.push(`[${label}]\n${m.content}`)
+      else if (mode === 'text') {
         const { text } = stripFileContent(m.content)
         parts.push(`[${label}]\n${stripMarkdown(text)}`)
       } else {
-        // 'markdown' — strip file blocks, keep markdown
         const { text } = stripFileContent(m.content)
         parts.push(`[${label}]\n${text}`)
       }
     }
-
     const result = parts.join('\n\n---\n\n')
     await window.api.clipboardWrite(result)
   }, [activeTabId, saveTabToBackend])
 
-  // Re-render on markdown toggle
   useEffect(() => {
     async function refresh() { 
       if (!activeTabId) return
-      const msgs = await window.api.chatGetMessages(); 
+      const msgs = await window.api.chatGetMessages(activeTabId); 
       if (msgs.length > 0) setMessages(renderMessages(msgs)) 
     }
     refresh()
   }, [useMarkdown, renderMessages, activeTabId])
 
-  // ── Layout ──
   const selectedPromptMissing = Boolean(selectedPrompt) && !prompts.some(p => p.prompt_text === selectedPrompt)
 
   return (
@@ -399,22 +418,16 @@ function AppInner({ conversations, setConversations }: {
 
       <TabBar />
 
-      {/* Options bar */}
       {activeTab && (
         <div className="flex items-center gap-4 px-4 py-1.5 bg-bg-surface border-b border-border fs-ui-xs font-sans shrink-0">
           <div className="flex items-center gap-2 text-text-muted">
             <span className="select-none">Markdown</span>
             <Tooltip text={useMarkdown ? 'Markdown formatting enabled' : 'Plain text mode enabled'}>
               <input
-                type="range"
-                min={0}
-                max={1}
-                step={1}
-                value={useMarkdown ? 1 : 0}
+                type="range" min={0} max={1} step={1} value={useMarkdown ? 1 : 0}
                 onChange={e => setUseMarkdown(Number(e.target.value) >= 1)}
                 className="w-[2.8rem] h-1 accent-accent cursor-pointer"
                 aria-label="Markdown"
-                title={useMarkdown ? 'Markdown formatting enabled' : 'Plain text mode enabled'}
               />
             </Tooltip>
           </div>
@@ -422,15 +435,10 @@ function AppInner({ conversations, setConversations }: {
             <span className="select-none">Web Search</span>
             <Tooltip text={webSearchTooltip}>
               <input
-                type="range"
-                min={0}
-                max={1}
-                step={1}
-                value={useWebSearch ? 1 : 0}
+                type="range" min={0} max={1} step={1} value={useWebSearch ? 1 : 0}
                 onChange={e => setUseWebSearch(Number(e.target.value) >= 1)}
                 className="w-[2.8rem] h-1 accent-accent cursor-pointer"
                 aria-label="Web Search"
-                title={webSearchTooltip}
               />
             </Tooltip>
           </div>
@@ -448,7 +456,7 @@ function AppInner({ conversations, setConversations }: {
 
       <div className="flex-1 flex overflow-hidden relative">
         <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} conversations={conversations}
-                 currentConvId={currentConvId} onOpenInNewTab={loadConversationIntoNewTab} onDelete={deleteConversation}
+                 currentConvId={currentConvId} onOpenInNewTab={loadConversation} onDelete={deleteConversation}
                  onRename={renameConversation} onNew={newChat} />
         
         <div className="flex-1 flex flex-col min-w-0 overflow-hidden relative">
