@@ -232,7 +232,7 @@ function AppInner({ conversations, setConversations }: {
 
   const refreshMessages = useCallback(async (tabId: string) => {
     const tab = tabs.find(t => t.id === tabId)
-    if (!tab || !tab.conversationId) return
+    if (!tab) return
     const msgs = await window.api.chatGetMessages(tabId)
     const rendered = renderMessages(msgs)
     updateTab(tabId, { messages: rendered })
