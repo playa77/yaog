@@ -104,7 +104,6 @@ export const TabProvider: React.FC<{ children: React.ReactNode, conversations: C
       return existingTabId;
     }
 
-    const loaded: LoadedConversation = await window.api.convLoad(conversationId);
     const conversation = conversations.find(c => c.id === conversationId);
     const title = conversation?.title || `Conversation ${conversationId}`;
     
@@ -112,16 +111,23 @@ export const TabProvider: React.FC<{ children: React.ReactNode, conversations: C
     const newTab: TabState = {
       ...createDefaultTab(id, conversationId, title),
       messages: [], // Will be rendered in App.tsx for now
-      selectedModel: loaded.state.modelId || '',
-      temperature: loaded.state.temperature ?? 1.0,
-      selectedPrompt: loaded.state.systemPrompt,
-      useWebSearch: loaded.state.webSearch,
+      selectedModel: '',
+      temperature: 1.0,
+      selectedPrompt: null,
+      useWebSearch: false,
     };
 
     setTabs(prev => [...prev, newTab]);
     await window.api.tabSwitch(id); setActiveTabId(id);
+    const loaded: LoadedConversation = await window.api.convLoad(conversationId);
+    updateTab(id, {
+      selectedModel: loaded.state.modelId || '',
+      temperature: loaded.state.temperature ?? 1.0,
+      selectedPrompt: loaded.state.systemPrompt,
+      useWebSearch: loaded.state.webSearch,
+    });
     return id;
-  }, [tabs, conversations, switchTab]);
+  }, [tabs, conversations, switchTab, updateTab]);
 
   const findTabByConversationId = useCallback((conversationId: number) => {
     const tab = tabs.find(t => t.conversationId === conversationId);
@@ -137,9 +143,10 @@ export const TabProvider: React.FC<{ children: React.ReactNode, conversations: C
   }, []);
 
   const loadConversationIntoTab = useCallback(async (conversationId: number, tabId: string) => {
-    const loaded: LoadedConversation = await window.api.convLoad(conversationId);
     const conversation = conversations.find(c => c.id === conversationId);
     const title = conversation?.title || `Conversation ${conversationId}`;
+    await window.api.tabSwitch(tabId); setActiveTabId(tabId);
+    const loaded: LoadedConversation = await window.api.convLoad(conversationId);
     
     const updates: Partial<TabState> = {
       conversationId,
@@ -154,7 +161,6 @@ export const TabProvider: React.FC<{ children: React.ReactNode, conversations: C
     };
 
     updateTab(tabId, updates);
-    await window.api.tabSwitch(tabId); setActiveTabId(tabId);
     return tabId;
   }, [conversations, updateTab]);
 

@@ -11,14 +11,14 @@ export default function Tooltip({ text, children, position = 'top' }: Props) {
   const [coords, setCoords] = useState({ x: 0, y: 0 })
   const wrapRef = useRef<HTMLDivElement>(null)
   const tipRef = useRef<HTMLDivElement>(null)
-  const timerRef = useRef<ReturnType<typeof setTimeout>>()
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const show = () => {
     timerRef.current = setTimeout(() => setVisible(true), 400)
   }
 
   const hide = () => {
-    clearTimeout(timerRef.current)
+    if (timerRef.current) clearTimeout(timerRef.current)
     setVisible(false)
   }
 
@@ -39,7 +39,7 @@ export default function Tooltip({ text, children, position = 'top' }: Props) {
     setCoords({ x, y })
   }, [visible, position])
 
-  useEffect(() => () => clearTimeout(timerRef.current), [])
+  useEffect(() => () => { if (timerRef.current) clearTimeout(timerRef.current) }, [])
 
   return (
     <div
