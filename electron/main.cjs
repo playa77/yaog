@@ -614,6 +614,11 @@ function convMessagesForApi() { return messages.map(m => ({ role: m.role, conten
 async function streamResponse(win, tabId, modelId, temperature, extra) {
   const key = getApiKey();
   if (!key) { win.webContents.send('stream:error', tabId, 'API key not configured'); return; }
+  const normalizedModelId = typeof modelId === 'string' ? modelId.trim() : '';
+  if (!normalizedModelId) {
+    win.webContents.send('stream:error', tabId, 'No model selected. Open Settings → Models and select a model.');
+    return;
+  }
   
   // Capture current state for this tab
   const tabState = tabStates[tabId];
@@ -622,7 +627,7 @@ async function streamResponse(win, tabId, modelId, temperature, extra) {
   const tabAbortController = new AbortController();
   tabState.abortController = tabAbortController;
 
-  const payload = { model: modelId, messages: tabState.messages.map(m => ({ role: m.role, content: m.content })), temperature, stream: true, ...extra };
+  const payload = { model: normalizedModelId, messages: tabState.messages.map(m => ({ role: m.role, content: m.content })), temperature, stream: true, ...extra };
   
   try {
     const result = await fetch('https://openrouter.ai/api/v1/chat/completions', { 
@@ -667,7 +672,7 @@ async function streamResponse(win, tabId, modelId, temperature, extra) {
           if (content) { 
             if (!firstToken) { 
               firstToken = true; 
-              win.webContents.send('stream:start', tabId, tabState.messages.length, modelId); 
+              win.webContents.send('stream:start', tabId, tabState.messages.length, normalizedModelId); 
             } 
             fullContent += content; 
             win.webContents.send('stream:token', tabId, content); 
@@ -678,8 +683,8 @@ async function streamResponse(win, tabId, modelId, temperature, extra) {
 
     // Add assistant message to the specific tab's state and DB
     const cid = tabState.currentConvId;
-    const msgId = dbAddMessage(cid, 'assistant', fullContent, modelId, temperature);
-    tabState.messages.push({ id: msgId, role: 'assistant', content: fullContent, model_used: modelId, temperature_used: temperature });
+    const msgId = dbAddMessage(cid, 'assistant', fullContent, normalizedModelId, temperature);
+    tabState.messages.push({ id: msgId, role: 'assistant', content: fullContent, model_used: normalizedModelId, temperature_used: temperature });
     
     win.webContents.send('stream:done', tabId, fullContent);
   } catch (err) {
@@ -688,6 +693,15 @@ async function streamResponse(win, tabId, modelId, temperature, extra) {
   } finally { 
     if (tabState.abortController === tabAbortController) tabState.abortController = null;
   }
+}
+
+function resolveEffectiveModelId(modelId, webSearch) {
+  let effectiveModel = typeof modelId === 'string' ? modelId.trim() : '';
+  if (!effectiveModel) effectiveModel = (models[0]?.id || '').trim();
+  if (!effectiveModel) return '';
+  if (webSearch && !effectiveModel.endsWith(':online')) effectiveModel += ':online';
+  if (!webSearch && effectiveModel.endsWith(':online')) effectiveModel = effectiveModel.replace(':online', '');
+  return effectiveModel;
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -1103,9 +1117,7 @@ function registerIPC(win) {
       }
     }
 
-    let effectiveModel = modelId;
-    if (opts?.webSearch && !effectiveModel.endsWith(':online')) effectiveModel += ':online';
-    if (!opts?.webSearch && effectiveModel.endsWith(':online')) effectiveModel = effectiveModel.replace(':online', '');
+    const effectiveModel = resolveEffectiveModelId(modelId, !!opts?.webSearch);
     
     await streamResponse(win, tabId, effectiveModel, temp, {});
     
@@ -1125,9 +1137,7 @@ function registerIPC(win) {
     currentConvId = tabStates[tabId].currentConvId; messages = tabStates[tabId].messages;
 
     convUpdateMessage(index, newContent); convPruneAfter(index);
-    let effectiveModel = modelId;
-    if (opts?.webSearch && !effectiveModel.endsWith(':online')) effectiveModel += ':online';
-    if (!opts?.webSearch && effectiveModel.endsWith(':online')) effectiveModel = effectiveModel.replace(':online', '');
+    const effectiveModel = resolveEffectiveModelId(modelId, !!opts?.webSearch);
     await streamResponse(win, tabId, effectiveModel, temp, {});
     return { conversations: dbGetConversations(), tokenCount: estimateTokens(messages) };
   });
@@ -1140,9 +1150,7 @@ function registerIPC(win) {
     const actualIdx = messages.filter(m => m.role !== 'system').findIndex((_, i) => i === index);
     if (actualIdx === -1 || actualIdx >= messages.length) return { conversations: dbGetConversations(), tokenCount: estimateTokens(messages) };
     if (messages[actualIdx]?.role === 'assistant') convPruneFrom(actualIdx); else convPruneAfter(actualIdx);
-    let effectiveModel = modelId;
-    if (opts?.webSearch && !effectiveModel.endsWith(':online')) effectiveModel += ':online';
-    if (!opts?.webSearch && effectiveModel.endsWith(':online')) effectiveModel = effectiveModel.replace(':online', '');
+    const effectiveModel = resolveEffectiveModelId(modelId, !!opts?.webSearch);
     await streamResponse(win, tabId, effectiveModel, temp, {});
     return { conversations: dbGetConversations(), tokenCount: estimateTokens(messages) };
   });
