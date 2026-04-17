@@ -1,85 +1,118 @@
-# YaOG v7.2.0 — Yet another OpenRouter GUI
+# YaOG v7.3.0 — Yet another OpenRouter GUI
 
-Immersive AI chat client. Dark ebook-reader aesthetic, modern web stack.
+YaOG is an immersive desktop AI chat client for OpenRouter models, built with Electron + React 19 and designed around fast multi-conversation workflows, local-first data storage, and production-ready message controls.
 
-## Stack
+## What’s New in v7.3.0
 
-- **Electron** — Desktop shell
-- **React 19 + TypeScript** — UI
-- **Vite** — Build / HMR
-- **Tailwind CSS** — Styling
-- **better-sqlite3** — Local database
-- **pdf-parse** — PDF text extraction
-- **OpenRouter API** — All models via openrouter.ai
+- **Persistent Memories**: You can now store durable user preferences/context and apply them to every conversation via **Settings → Memories**.
+- **Safe Memory Injection**: Memories are injected as hidden system context in the backend and are not shown in visible chat history.
+- **Memory Visibility in Composer**: The input area now shows a clear **“Memories active”** status indicator.
+- **Hard Limits + Local Privacy**: Memory content is stored locally in `~/.yaog/settings.json` and capped at **28,000 characters**.
+
+For full details, see [RELEASE_NOTES.md](./RELEASE_NOTES.md).
+
+## Core Capabilities
+
+- **Multi-tab chat workspace** with state synchronization between renderer and backend.
+- **Streaming responses** from OpenRouter with stop controls and error handling.
+- **Conversation history management** (rename, delete, import/export JSON).
+- **Message-level controls**: edit + re-run, regenerate, delete trailing branch.
+- **Copy modes** at message and conversation scope (text, markdown, full context including attachment blocks).
+- **File attachment ingestion** with text extraction for:
+  - PDF
+  - ZIP / TAR / TGZ / TAR.BZ2 / TAR.XZ / TAR.ZST
+  - RAR / 7Z
+  - GZ and common text/code file types
+- **Prompt system** with editable reusable system prompts.
+- **Custom model registry** (add, edit, reorder, remove model IDs).
+- **Web search mode toggle** (applies `:online` model variant behavior).
+- **Token estimation** for active tab context + pending input.
+- **Font system customization** for chat/UI/code typography.
+- **API key management** in app settings (stored in `~/.yaog/.env`).
+- **Local SQLite persistence** (`~/.yaog/yaog.db`) with legacy migration from `~/.or-client/`.
+
+## Tech Stack
+
+- **Electron** (desktop shell + secure preload bridge)
+- **React 19 + TypeScript** (renderer UI)
+- **Vite** (dev server + build)
+- **Tailwind CSS** (styling)
+- **better-sqlite3** (local persistence)
+- **marked + highlight.js** (markdown + syntax highlighting)
+- **pdf-parse** + native CLI helpers (`pdftotext`, `unzip`, `tar`, `unrar`, `7z` when available)
+
+## Project Architecture
+
+```text
+build.js                 Automated build workflow (native rebuild + electron-builder)
+electron/
+  main.cjs               Main process: DB, streaming, settings, files, IPC handlers
+  preload.cjs            Typed IPC surface exposed as window.api
+  afterPack.cjs          Linux no-sandbox wrapper integration for packaged builds
+src/
+  App.tsx                Root UI state orchestration
+  contexts/TabContext.tsx Multi-tab lifecycle + synchronization
+  components/
+    Toolbar.tsx          Model, temperature, copy, settings, token display
+    TabBar.tsx           Open tab navigation
+    Sidebar.tsx          History list + import/export + rename/delete
+    ChatView.tsx         Rendered message stream
+    MessageBubble.tsx    Per-message actions (copy/edit/regenerate/delete)
+    InputBar.tsx         Compose area, attachments, send/stop, memories indicator
+    SettingsSheet.tsx    General, fonts, API key, memories, models, prompts tabs
+```
 
 ## Setup
 
+### Prerequisites
+
+- Node.js **18+**
+- Build tools for native module compilation (`better-sqlite3`)
+
+Ubuntu/Debian example:
+
 ```bash
-# Install dependencies
+sudo apt install -y build-essential python3
+```
+
+### Install and Run
+
+```bash
 npm install
-
-# Rebuild native module for Electron
 npm run rebuild
-
-# Set your API key (or do it in-app via Settings)
-mkdir -p ~/.yaog
-echo 'OPENROUTER_API_KEY="sk-or-v1-..."' > ~/.yaog/.env
-
-# Run in dev mode
 npm run dev
 ```
 
-> **Note**: You need Node.js 18+ and build tools for better-sqlite3:
-> ```bash
-> sudo apt install build-essential python3
-> ```
+### Configure OpenRouter API Key
 
-## Architecture
+Either set the key in **Settings → API Key**, or pre-seed:
 
-```
-build.js          → Automated build script (rebuilds native modules + packages)
-electron/
-  main.cjs        → Backend: window, SQLite, API streaming, IPC, file processing
-  preload.cjs     → Context bridge (typed API for renderer)
-  afterPack.cjs   → Linux sandbox fix (binary wrapper hook)
-src/
-  App.tsx          → Root component, state management, global event handling
-  contexts/
-    TabContext.tsx → Multi-tab state management & synchronization
-  components/
-    Toolbar.tsx    → Model selection, temperature, settings, copy actions
-    TabBar.tsx     → Navigation between open chat sessions
-    Sidebar.tsx    → History management (resizing side panel)
-    ChatView.tsx   → Scrollable message list with auto-scroll logic
-    MessageBubble.tsx → Individual message units with granular copy menu
-    InputBar.tsx   → Multi-line text input with file attachment support
-    SettingsSheet.tsx → Global configuration (API, Models, Prompts, Fonts)
+```bash
+mkdir -p ~/.yaog
+echo 'OPENROUTER_API_KEY="sk-or-v1-..."' > ~/.yaog/.env
 ```
 
-## Features
-
-- [x] **Multi-Tab Interface** — Keep multiple conversations open and sync state between them.
-- [x] **Stable Layout** — High-integrity flexbox UI that prevents content overflow.
-- [x] **Resizing Sidebar** — History drawer that reflows the main chat area.
-- [x] **Professional Prompts** — Curated system instructions for architects, assistants, and partners.
-- [x] **Streaming API** — Real-time responses from any OpenRouter model.
-- [x] **Markdown Rendering** — Clean typography with syntax highlighting for code.
-- [x] **Document Ingestion** — Support for PDF, ZIP, TAR, RAR, and 7Z with text extraction.
-- [x] **Granular Copy** — Specialized copy modes (Markdown, Plain Text, Full Context).
-- [x] **Font Customization** — Independent family/size controls for Chat, UI (Inter), and Code.
-- [x] **Local Database** — All history stored securely in a local SQLite file.
-
-## Migrating from v5
-
-Your old database at `~/.or-client/or-client.db` is auto-detected and copied to `~/.yaog/yaog.db` on first launch.
-
-## Building for Distribution
+## Build for Distribution
 
 ```bash
 npm run build
 ```
 
-Produces AppImage and .deb in `dist/`. The AppImage includes a `--no-sandbox` wrapper for Linux compatibility.
+Artifacts are generated in `dist/` (AppImage + `.deb` on Linux). Linux packages include a no-sandbox wrapper for compatibility.
+
+## Data Locations
+
+- **Database**: `~/.yaog/yaog.db`
+- **Settings**: `~/.yaog/settings.json`
+- **API key env file**: `~/.yaog/.env`
+- **Models registry**: `~/.yaog/models.json`
+- **Prompt metadata**: `~/.yaog/prompt-meta.json`
+
+## Migration
+
+On first launch, YaOG auto-migrates legacy data when detected:
+
+- `~/.or-client/or-client.db` → `~/.yaog/yaog.db`
 
 ## License
 
