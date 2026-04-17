@@ -88,7 +88,7 @@ export default function InputBar({
           onChange={e => { setText(e.target.value); onInputChange(e.target.value) }}
           onKeyDown={handleKeyDown}
           placeholder="Write your message… (Ctrl+Enter to send)"
-          rows={1}
+          rows={2}
           className="flex-1 bg-bg-elevated text-text-bright border border-border rounded-xl px-4 py-3 input-chat resize-none focus:outline-none focus:border-accent/60 placeholder:text-text-muted/40 transition-colors"
         />
 
