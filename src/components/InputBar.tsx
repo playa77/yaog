@@ -21,13 +21,21 @@ export default function InputBar({
   const [text, setText] = useState('')
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
-  // Auto-resize textarea
+  // Auto-resize textarea while preserving a 2-line minimum height.
   useEffect(() => {
     const el = textareaRef.current
-    if (el) {
-      el.style.height = '0'
-      el.style.height = Math.min(el.scrollHeight, 180) + 'px'
-    }
+    if (!el) return
+
+    const styles = window.getComputedStyle(el)
+    const lineHeight = parseFloat(styles.lineHeight) || 24
+    const paddingTop = parseFloat(styles.paddingTop) || 0
+    const paddingBottom = parseFloat(styles.paddingBottom) || 0
+    const borderTop = parseFloat(styles.borderTopWidth) || 0
+    const borderBottom = parseFloat(styles.borderBottomWidth) || 0
+    const minHeight = lineHeight * 2 + paddingTop + paddingBottom + borderTop + borderBottom
+
+    el.style.height = 'auto'
+    el.style.height = Math.min(Math.max(el.scrollHeight, minHeight), 180) + 'px'
   }, [text])
 
   const handleSend = () => {
