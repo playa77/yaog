@@ -1,3 +1,43 @@
+# YaOG v7.3.0 — Release Notes
+
+**Released:** 2026-04-17
+**Previous:** v7.2.0
+
+---
+
+## Highlights
+
+### Persistent Memories (New)
+
+YaOG now supports persistent, user-defined memories that can be applied across conversations.
+
+- Added a dedicated **Memories** section in Settings.
+- You can toggle memories on/off with **Use memories**.
+- You can save long-form preference/context notes (up to **28,000 characters**).
+- Memories are designed for durable defaults such as writing preferences, communication style, and recurring constraints.
+
+### Backend Memory Context Injection
+
+When enabled, memories are prepended to model requests as system context with explicit guardrails:
+
+- Current chat instructions still override stored memory when they conflict.
+- Memories are treated as contextual defaults, not rigid rules.
+- The model is instructed not to reveal memory contents unless asked.
+
+### UX Clarity Improvements
+
+- Added a **Memories active** status badge in the composer area.
+- Added save feedback in the Memories settings panel.
+- Added clear privacy messaging in settings indicating memories are local to the app.
+
+### Settings + Type System Updates
+
+- Extended app settings with `use_memories` and `memories_text`.
+- Added memory sanitization and hard character cap enforcement in backend settings writes.
+- Wired renderer initialization to reflect memory activation state at startup.
+
+---
+
 # YaOG v7.2.0 — Release Notes
 
 **Released:** 2026-04-16
@@ -81,6 +121,7 @@ YaOG now fully delegates reasoning behavior to OpenRouter/model defaults while p
 
 | Version | Date | Summary |
 |---------|------|---------|
+| 7.3.0 | 2026-04-17 | Persistent memories across chats, backend memory injection, UI memory status and settings integration |
 | 7.2.0 | 2026-04-16 | UI stability, multi-tab fixes, professional content rewrite, build script |
 | 7.1.6 | 2026-03-19 | Versioning consistency pass only |
 | 7.1.5 | 2026-03-19 | Removed reasoning controls and related parameter plumbing |
